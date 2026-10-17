@@ -170,7 +170,7 @@ local function stepAmp(amp, now, dt)
     local mixer = amp:GetMixer()
     if IsValid(mixer) then
       for _, ch in ipairs(amp:ActiveChannels()) do
-        local bus = bit.band(busMask, 1 << (ch - 1)) ~= 0 and "sub" or "mid"
+        local bus = bit.band(busMask, bit.lshift(1, ch - 1)) ~= 0 and "sub" or "mid"
         if busLevel(mixer, bus) > 0.001 then quiet = false break end
       end
     end
@@ -190,7 +190,7 @@ local function stepAmp(amp, now, dt)
     local c = st[ch]
     local pair = amp:ChannelPair(ch)
     local mode = NTx.AmpMode(p, amp:GetMode())
-    local isSub = bit.band(busMask, 1 << (ch - 1)) ~= 0
+    local isSub = bit.band(busMask, bit.lshift(1, ch - 1)) ~= 0
 
     -- Load: every cabinet assigned to either half of a fused pair.
     local list, spkEnts = {}, {}

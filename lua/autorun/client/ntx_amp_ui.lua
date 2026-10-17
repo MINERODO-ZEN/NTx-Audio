@@ -237,8 +237,10 @@ function NTx.OpenAmpUI(amp)
     bus:Select(amp:ChannelIsSub(ch) and 1 or 0)
     bus.OnSelect = function(_, _, data)
       local mask = amp:GetBusMask()
-      local bit = 1 << (ch - 1)
-      if tonumber(data) == 1 then mask = bit.bor(mask, bit) else mask = bit.band(mask, bit.bnot(bit)) end
+      -- Named bitv, not bit: a local called bit would shadow the library the
+      -- very next line calls.
+      local bitv = bit.lshift(1, ch - 1)
+      if tonumber(data) == 1 then mask = bit.bor(mask, bitv) else mask = bit.band(mask, bit.bnot(bitv)) end
       setAmp("busmask", mask)
     end
     local info = label(cr, "-", COL_DIM)
@@ -378,7 +380,7 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
   go.DoClick = function()
     local mask = 0
     for ch, bus in pairs(combos) do
-      if bus:GetSelectedID() == 1 then mask = bit.bor(mask, 1 << (ch - 1)) end
+      if bus:GetSelectedID() == 1 then mask = bit.bor(mask, bit.lshift(1, ch - 1)) end
     end
     net.Start("NTx.AmpEdit")
     net.WriteEntity(amp)

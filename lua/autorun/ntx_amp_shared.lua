@@ -393,7 +393,7 @@ function NTx.AmpSpeakerChannel(amp, spk)
   if ch >= 1 and ch <= usable then return ch end
   local want = spk:GetSpeakerType() == "SUB" and "sub" or "mid"
   for i = 1, usable do
-    local isSub = bit.band(amp:GetBusMask(), 1 << (i - 1)) ~= 0
+    local isSub = bit.band(amp:GetBusMask(), bit.lshift(1, i - 1)) ~= 0
     if (want == "sub") == isSub then return i end
   end
   return usable > 0 and 1 or 0

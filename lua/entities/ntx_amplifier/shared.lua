@@ -127,15 +127,15 @@ end
 
 -- Does this channel take SUB cabinets? Bit n of BusMask.
 function ENT:ChannelIsSub(ch)
-  return bit.band(self:GetBusMask(), 1 << (math.max(ch, 1) - 1)) ~= 0
+  return bit.band(self:GetBusMask(), bit.lshift(1, math.max(ch, 1) - 1)) ~= 0
 end
 
 function ENT:SetChannelSub(ch, sub)
   local m = self:GetBusMask()
   if sub then
-    m = bit.bor(m, 1 << (math.max(ch, 1) - 1))
+    m = bit.bor(m, bit.lshift(1, math.max(ch, 1) - 1))
   else
-    m = bit.band(m, bit.bnot(1 << (math.max(ch, 1) - 1)))
+    m = bit.band(m, bit.bnot(bit.lshift(1, math.max(ch, 1) - 1)))
   end
   self:SetBusMask(m)
 end
