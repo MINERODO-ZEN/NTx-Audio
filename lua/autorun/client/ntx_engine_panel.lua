@@ -140,6 +140,137 @@ hook.Add("PopulateToolMenu", "NTx.EngineUtilities", function()
     "", "", build, {})
 end)
 
+-- ------------------------------------------------------- amplifier options
+--
+-- Its own Utilities page, deliberately separate from the engine page: the engine
+-- toggles stay exactly where they were, and everything about amplifiers lives
+-- together here - the simulation switches, the server-owned rig parameters, the
+-- cabinet profile store and the diagnostics.
+--
+-- What differs between one amplifier and the next is NOT here: PFC, mains hum,
+-- fan noise, standby and the thermal limiter are per-amplifier fields (see
+-- NTx.AmpFields), editable from the amplifier's own panel, the properties window
+-- or the tool. A car amplifier and a vintage class AB rack share this page and
+-- nothing else.
+local function sendCvar(name, value, isBool)
+  net.Start("NTx.CvarSet")
+  net.WriteString(name)
+  if isBool then net.WriteBool(value and true or false) else net.WriteFloat(value) end
+  net.SendToServer()
+end
+
+local function sendAll(what)
+  net.Start("NTx.AmplifierEditAll")
+  net.WriteString(what)
+  net.SendToServer()
+end
+
+-- The simulation switches live on the server (they decide what every player
+-- hears), so these rows do NOT use DForm's convar-bound controls: a client
+-- writing a replicated ConVar only changes its own copy, and the checkbox would
+-- then show a setting the server is ignoring.
+local function serverCheck(panel, text, name)
+  local left = vgui.Create("DLabel", panel)
+  left:SetText(text)
+  left:SetDark(true)
+  local right = vgui.Create("DCheckBox", panel)
+  local cv = cvOf(name)
+  right:SetValue(cv and cv:GetBool() or false)
+  right.OnChange = function(_, v) sendCvar(name, v, true) end
+  panel:AddItem(left, right)
+end
+
+local function serverSlider(panel, text, name, min, max, dec)
+  local left = vgui.Create("DLabel", panel)
+  left:SetText(text)
+  left:SetDark(true)
+  local right = vgui.Create("DNumSlider", panel)
+  local cv = cvOf(name)
+  right:SetMinMax(min, max)
+  right:SetDecimals(dec)
+  right:SetValue(cv and cv:GetFloat() or min)
+  right.OnValueChanged = function(_, v) sendCvar(name, v) end
+  panel:AddItem(left, right)
+end
+
+local function buildAmpContents(panel)
+  panel:Clear()
+
+  panel:Help("NTx amplifier simulation")
+  local sim = cvOf("ntx_amp_sim")
+  panel:ControlHelp("Simulation is " .. (sim and sim:GetBool() and "RUNNING" or "OFF")
+    .. ". Amplifiers keep passing audio either way; with it off they are just"
+    .. " boxes and nothing heats up, clips, protects or dies.")
+  serverCheck(panel, "Run the amplifier simulation", "ntx_amp_sim")
+  serverCheck(panel, "Amplifiers take permanent damage and can burn out", "ntx_amp_damage")
+  serverCheck(panel, "Cabinets take damage and can blow", "ntx_spk_damage")
+  panel:CheckBox("Draw amplifier front panels in the world", "ntx_gizmo_amp")
+  panel:CheckBox("Panel LEDs on (off leaves the simulation running)", "ntx_amp_leds")
+  panel:CheckBox("Print the amplifier table every 2 s", "ntx_amp_debug")
+
+  panel:Help("Rig parameters (server)")
+  panel:ControlHelp("Read by the simulation on the server, so these are shared by everyone.")
+  serverSlider(panel, "Crest factor, RMS to peak (dB)", "ntx_crest_db", 0, 30, 1)
+  serverSlider(panel, "Nominal mains voltage (V)", "ntx_mains_nominal", 90, 260, 0)
+  serverSlider(panel, "Mains frequency (Hz, drives hum)", "ntx_mains_hz", 50, 60, 0)
+  serverSlider(panel, "Room temperature (C)", "ntx_ambient_c", -10, 45, 0)
+  serverSlider(panel, "Amplifier sync rate (Hz)", "ntx_amp_sync_hz", 1, 20, 0)
+  serverSlider(panel, "Amplifier sync radius (units)", "ntx_amp_sync_dist", 0, 20000, 0)
+  panel:ControlHelp("With nothing wired to an amplifier's MainsV it reads the nominal"
+    .. " voltage above. Wire a number pad or an E2 to MainsV for a venue-wide brownout.")
+  panel:NumSlider("Fallback meter level without page RMS (dBFS)", "ntx_amp_rms_db", -90, -20, 0)
+
+  panel:Help("Cabinet profiles")
+  panel:ControlHelp("Built in: " .. table.concat(NTx.SpeakerProfileIds(), ", "))
+  local savedIds = {}
+  for id in pairs(NTx.SavedSpeakerProfiles or {}) do savedIds[#savedIds + 1] = id end
+  table.sort(savedIds)
+  if #savedIds == 0 then
+    panel:ControlHelp("No saved profiles yet: aim at a cabinet and run ntx_spk_save <name>.")
+  end
+  for _, id in ipairs(savedIds) do
+    local p = NTx.SavedSpeakerProfiles[id]
+    local left = vgui.Create("DLabel", panel)
+    left:SetText(string.format("%s (%s)", p.name, id))
+    left:SetDark(true)
+    local del = vgui.Create("DButton", panel)
+    del:SetText("Delete")
+    del.DoClick = function()
+      net.Start("NTx.SpkProfile")
+      net.WriteString("delete")
+      net.WriteEntity(NULL)
+      net.WriteString(id)
+      net.SendToServer()
+    end
+    panel:AddItem(left, del)
+  end
+  panel:ControlHelp("Aim at a ntx_speaker, then: ntx_spk_save <name> / ntx_spk_apply <id>.")
+
+  panel:Help("Diagnostics")
+  panel:Button("Print amplifier status", "ntx_amp_status")
+  panel:Button("List cabinet profiles", "ntx_spk_list")
+  panel:Button("Clear every clip LED and fault", function() sendAll("reset") end)
+  panel:Button("Restore fans and mains on every amp", function() sendAll("cool") end)
+end
+
+local function buildAmp(panel)
+  local ok, err = pcall(buildAmpContents, panel)
+  if not ok then
+    print("[NTx] amplifier panel build failed: " .. tostring(err))
+    local lbl = vgui.Create("DLabel", panel)
+    lbl:Dock(TOP)
+    lbl:SetWrap(true)
+    lbl:SetTall(60)
+    lbl:SetText("NTx amplifier panel failed to build:\n" .. tostring(err))
+  end
+end
+
+hook.Add("PopulateToolMenu", "NTx.AmplifierUtilities", function()
+  spawnmenu.AddToolMenuOption("Utilities", "NTx Amplifiers", "ntx_amplifiers",
+    "Amplifier simulation, rig parameters and cabinet profiles",
+    "", "", buildAmp, {})
+end)
+
 -- Restore every client-owned engine ConVar on this page to its default.
 -- Server-owned values are reported, not written, so they are skipped.
 -- Also repairs a ntx_backend poisoned with a non-choice value (the old

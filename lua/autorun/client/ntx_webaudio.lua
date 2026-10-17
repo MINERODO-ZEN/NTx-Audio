@@ -55,6 +55,7 @@ local function markPageBroken(pkey, why)
   NTx.PagePong[pkey] = nil
   NTx.PagePing[pkey] = nil
   NTx.PagePongDead[pkey] = nil
+  NTx.PageRms[pkey] = nil
 end
 
 local cvMaxPages = CreateClientConVar("ntx_max_pages", "4", true, false,
@@ -161,7 +162,23 @@ local function buildTaps(input, mrec, listenerPos)
       -- softens the inverse curve, it never reaches silence.)
       local maxd = math.Clamp(input.maxd or 1200, 100, 10000)
       local rangeFade = math.Clamp((maxd - (listenerPos - s.pos):Length()) / math.max(maxd * 0.15, 1), 0, 1)
-      if gain > 0.001 and rangeFade > 0 then
+      -- Amplifier in the chain. The attenuation the simulation reports (thermal
+      -- foldback, protection, standby, burnt) scales the tap, and the clip ratio
+      -- rides along so the page can flat-top the signal instead of merely making
+      -- it quieter. Active cabinets have no amplifier at all.
+      local ampGain, ampClip = 1, 1
+      local ampEnt = IsValid(s.ent) and s.ent.GetAmp and s.ent:GetAmp() or nil
+      if IsValid(ampEnt) and ampEnt:GetClass() == "ntx_amplifier" and not s.ent:GetActive() then
+        local ch = NTx.AmpSpeakerChannel(ampEnt, s.ent)
+        local data = ch > 0 and NTx.AmpTapData(ampEnt, ch) or nil
+        if data then
+          ampGain = data.g
+          ampClip = data.cl
+        end
+      end
+      -- A burnt driver is an open circuit: nothing comes out of it.
+      if s.ent:GetBlown() then ampGain = 0 end
+      if gain > 0.001 and rangeFade > 0 and ampGain > 0 then
         gain = gain * rangeFade
         local delayMs, inv = 0, false
         if mode == "cardioid" and s.reversed then delayMs, inv = cardioidMs, true end
@@ -188,17 +205,17 @@ local function buildTaps(input, mrec, listenerPos)
         elseif s.selfcard then
           coneGain = NTx.MidConeGain(s.pos, s.ang, delta, 90, 180, NTx.CARDIOID_MIN_GAIN)
         end
-        gain = gain * coneGain
+        gain = gain * coneGain * ampGain
         -- Throttle lives in the NTx table, not a file-local: after a
         -- lua_refresh or a partial file sync a file-local declared further
         -- down can be nil while the Think hook already references it, which
         -- crashed buildTaps at this exact comparison.
         if NTx.CvConeDebug and NTx.CvConeDebug:GetBool() and CurTime() >= (NTx.NextWaConeDbg or 0) then
           NTx.NextWaConeDbg = CurTime() + 2
-          print(string.format("[NTx cone/WA] %s%s ent=%s dist=%.0f/%.0f cone=%.3f range=%.2f g=%.4f",
+          print(string.format("[NTx cone/WA] %s%s ent=%s dist=%.0f/%.0f cone=%.3f range=%.2f amp=%.2f cl=%.2f g=%.4f",
             tostring(s.stype), s.selfcard and "(SC)" or "",
             tostring(IsValid(s.ent) and s.ent:EntIndex() or "?"),
-            dist, maxd, coneGain, rangeFade, gain))
+            dist, maxd, coneGain, rangeFade, ampGain, ampClip, gain))
         end
         -- Estimated audible energy at the listener, mirroring the
         -- PannerNode's distance attenuation and the directivity we just
@@ -217,6 +234,10 @@ local function buildTaps(input, mrec, listenerPos)
           -- 20000 = no occlusion lowpass (audible path untouched); lower =
           -- cabinet without line of sight, highs rolled off by the page.
           occlp = math.Round(occlp, 1),
+          -- Amplifier clip ratio: 1 = clean, >1 = held back by that much, which
+          -- the page turns into drive + a waveshaper. Optional field: a page
+          -- that predates it ignores it and the tap is just attenuated.
+          cl = math.Round(ampClip, 3),
         }
       end
     end
@@ -384,6 +405,16 @@ function NTx.WebAudioOnStatus(pkey, json)
       NTx.PageBroken[P.inputEnt] = nil
       NTx.BrokenRetryAt[P.inputEnt] = nil
     end
+  elseif r.t == "rms" then
+    -- Optional (page v6): the source level measured in the page, which is what
+    -- makes the amplifier meters move with the music instead of sitting on the
+    -- mixer faders. A page that never reports it just leaves the meters on the
+    -- server's commanded estimate.
+    NTx.PageRms[pkey] = {
+      v = math.Clamp(tonumber(r.v) or 0, 0, 4),
+      c = tonumber(r.c) or 0,
+      at = CurTime(),
+    }
   elseif r.t == "error" then
     local code = tonumber(r.code) or 0
     local P = NTx.WebAudio.Pages[pkey]
@@ -565,6 +596,11 @@ hook.Add("Think", "NTx.WebAudioThink", function()
   end
   local totalEnergy = webEnergy + bassEnergy
   local norm = NTx.HeadroomNorm(totalEnergy)
+  -- Mains hum and fan noise are amplifier noise, not cabinet noise: one page
+  -- per amplifier owns them so a four-input rig does not hum four times. The
+  -- first page that reaches an amplifier claims it, which is stable because the
+  -- input order is stable.
+  local claimed = {}
   for _, pend in ipairs(pending) do
     local P = ensurePage(pend.pkey, pend.url)
     if P then
@@ -576,6 +612,17 @@ hook.Add("Think", "NTx.WebAudioThink", function()
         smoothMs = cvMotionSmooth:GetFloat(),
         maxRate = cvMotionRate:GetFloat(),
       }
+      -- Amplifier-owned noise, once per amplifier.
+      if NTx.AmpExtras then
+        for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
+          if IsValid(amp) and IsValid(amp:GetMixer()) and amp:GetMixer() == pend.ent:GetMixer()
+            and not claimed[amp] then
+            claimed[amp] = true
+            local extras = NTx.AmpExtras(amp, true)
+            if extras then payload.amp = extras end
+          end
+        end
+      end
       if IsValid(P.panel) then
         P.panel:Call("ntxUpdate(" .. util.TableToJSON(payload) .. ")")
       end
@@ -589,6 +636,7 @@ hook.Add("Think", "NTx.WebAudioThink", function()
       NTx.PagePong[pkey] = nil
       NTx.PagePing[pkey] = nil
       NTx.PagePongDead[pkey] = nil
+      NTx.PageRms[pkey] = nil
     end
   end
   -- No open pages means nothing is running, regardless of the last

@@ -1,0 +1,128 @@
+AddCSLuaFile("cl_init.lua")
+AddCSLuaFile("shared.lua")
+include("shared.lua")
+
+NTx = NTx or {}
+NTx.Amplifiers = NTx.Amplifiers or {}
+
+function ENT:Initialize()
+  self:SetModel("models/props_lab/reciever01b.mdl")
+  self:PhysicsInit(SOLID_VPHYSICS)
+  self:SetMoveType(MOVETYPE_VPHYSICS)
+  self:SetSolid(SOLID_VPHYSICS)
+  local phys = self:GetPhysicsObject()
+  if IsValid(phys) then phys:Wake() end
+  self:CreateWirePorts()
+  if self:GetProfile() == "" then self:ApplyAmpProfile("cdi1000") end
+  if self:GetTempSink() == 0 then self:SetTempSink(22) end
+  if self:GetTempDev() == 0 then self:SetTempDev(22) end
+  -- Wire-fed mains take over as soon as anything drives the input; until then
+  -- the amp reads the server's external grid value.
+  self.WireMains = {}
+  self.Injected = ""
+  NTx.Amplifiers[self] = true
+end
+
+function ENT:OnRemove()
+  NTx.Amplifiers[self] = nil
+  -- Speakers driven by this amp fall back to being driven straight off the
+  -- mixer rather than pointing at a dead entity.
+  for _, e in ipairs(ents.FindByClass("ntx_speaker")) do
+    if IsValid(e) and e.GetAmp and e:GetAmp() == self then e:SetAmp(NULL) end
+  end
+  if NTx.AmpSimDrop then NTx.AmpSimDrop(self) end
+  if NTx.BroadcastGraph then NTx.BroadcastGraph() end
+end
+
+function ENT:SpawnFunction(ply, tr)
+  if not tr.Hit then return end
+  local ent = ents.Create("ntx_amplifier")
+  ent:SetPos(tr.HitPos + tr.HitNormal * 8)
+  ent:Spawn()
+  ent:Activate()
+  if CPPI then ent:CPPISetOwner(ply) end
+  undo.Create("NTx Amplifier")
+  undo.AddEntity(ent)
+  undo.SetPlayer(ply)
+  undo.Finish()
+  return ent
+end
+
+-- Wire inputs. MainsV is the interesting one: whatever the external power
+-- simulation puts on it wins over the amp's own override, which is how a
+-- venue-wide brownout reaches every amplifier at once.
+function ENT:TriggerInput(name, value)
+  self.WireMains = self.WireMains or {}
+  local v = tonumber(value) or 0
+  if name == "MainsV" then
+    self.WireMains.v = v
+  elseif name == "MainsA" then
+    self.WireMains.a = v
+  elseif name == "MainsHz" then
+    self.WireMains.hz = v
+  end
+end
+
+-- Mains voltage this amplifier believes it has, in precedence order.
+function ENT:MainsVoltage(nominal)
+  local w = self.WireMains or {}
+  if tonumber(w.v) and w.v > 0 then return math.Clamp(w.v, 0, 500) end
+  local ov = tonumber(self:GetMainsOverride()) or 0
+  if ov > 0 then return math.Clamp(ov, 0, 500) end
+  return math.Clamp(tonumber(nominal) or 230, 0, 500)
+end
+
+function ENT:PreEntityCopy()
+  duplicator.StoreEntityModifier(self, "NtxAmp", {
+    profile = self:GetProfile(),
+    chans = self:GetChannels(), ratedw = self:GetRatedW(), ratedz = self:GetRatedLoad(),
+    minz = self:GetMinLoad(), sens = self:GetSens(), trim = self:GetTrim(), ilime = self:GetIlime(),
+    mode = self:GetMode(), hizv = self:GetHizVolt(), busmask = self:GetBusMask(), meters = self:GetMeters(),
+    pfc = self:GetPFC(), hum = self:GetMainsHum(), humdb = self:GetHumDb(),
+    fan = self:GetFanNoise(), fandb = self:GetFanNoiseDb(),
+    standby = self:GetAutoStandby(), sbdelay = self:GetStandbyDelay(),
+    cliphold = self:GetClipHold(), crest = self:GetCrestDb(), thbias = self:GetThermalBias(),
+    mainsov = self:GetMainsOverride(), ambient = self:GetAmbient(),
+    power = self:GetPower(), fanon = self:GetFanOn(),
+  })
+end
+
+function ENT:PostEntityPaste(ply, ent, created)
+  local d = ent.EntityMods and ent.EntityMods.NtxAmp
+  if d then
+    self:SetProfile(tostring(d.profile or ""))
+    -- A profile the addon no longer knows about leaves the entity with its
+    -- stamped numbers instead of nothing at all.
+    if not self:ApplyAmpProfile(self:GetProfile()) then
+      self:SetProfile("")
+    end
+    self:SetChannels(math.Clamp(math.floor(tonumber(d.chans) or 2), 1, 8))
+    self:SetRatedW(math.Clamp(tonumber(d.ratedw) or 100, 1, 50000))
+    self:SetRatedLoad(math.Clamp(tonumber(d.ratedz) or 8, 1, 1000))
+    self:SetMinLoad(math.Clamp(tonumber(d.minz) or 2, 0.1, 100))
+    self:SetSens(math.Clamp(tonumber(d.sens) or 1.4, 0.05, 10))
+    self:SetTrim(math.Clamp(tonumber(d.trim) or 0, -40, 24))
+    self:SetIlime(math.Clamp(tonumber(d.ilime) or 20, 1, 60))
+    self:SetMode(math.Clamp(math.floor(tonumber(d.mode) or 0), 0, 2))
+    self:SetHizVolt(math.Clamp(math.floor(tonumber(d.hizv) or 0), 0, 240))
+    self:SetBusMask(math.Clamp(math.floor(tonumber(d.busmask) or 0), 0, 255))
+    self:SetMeters(math.Clamp(math.floor(tonumber(d.meters) or 0), 0, 2))
+    self:SetPFC(d.pfc == true)
+    self:SetMainsHum(d.hum == true)
+    self:SetHumDb(math.Clamp(tonumber(d.humdb) or -120, -120, 0))
+    self:SetFanNoise(d.fan == true)
+    self:SetFanNoiseDb(math.Clamp(tonumber(d.fandb) or -120, -120, 0))
+    self:SetAutoStandby(d.standby == true)
+    self:SetStandbyDelay(math.Clamp(tonumber(d.sbdelay) or 180, 0, 600))
+    self:SetClipHold(math.Clamp(tonumber(d.cliphold) or 0.1, 0, 2))
+    self:SetCrestDb(math.Clamp(tonumber(d.crest) or 12, 0, 30))
+    self:SetThermalBias(math.Clamp(tonumber(d.thbias) or 1, 0.4, 3))
+    self:SetMainsOverride(math.Clamp(tonumber(d.mainsov) or 0, 0, 400))
+    self:SetAmbient(math.Clamp(tonumber(d.ambient) or 0, -20, 60))
+    self:SetPower(d.power ~= false)
+    self:SetFanOn(d.fanon ~= false)
+    self:CreateWirePorts()
+  end
+  if NTx.Amplifiers then NTx.Amplifiers[self] = true end
+  if NTx.BroadcastGraph then NTx.BroadcastGraph() end
+end

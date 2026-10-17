@@ -195,6 +195,10 @@ function buildChain(kind){
   // on a live tap is itself a click.
   var occ=C.ctx.createBiquadFilter();
   occ.type="lowpass"; occ.frequency.value=20000; occ.Q.value=0.7071;
+  // Amplifier flat-topping. Null curve = transparent, so an un-clipped tap is
+  // bit-identical to having no shaper at all; Lua only drives it above 1.
+  var sh=C.ctx.createWaveShaper();
+  sh.curve=identityCurve(1024); sh.oversample="2x";
   var g=C.ctx.createGain();
   // Start silent, never at the Web Audio default of 1. A tap that appears
   // (unmute / channel coming back) would otherwise blast at full volume for
@@ -204,15 +208,72 @@ function buildChain(kind){
   var pol=C.ctx.createGain();
   var pn=C.ctx.createPanner();
   pn.panningModel="HRTF"; pn.distanceModel="inverse"; pn.refDistance=300; pn.rolloffFactor=1;
-  a1.connect(a2); a2.connect(occ); occ.connect(g); g.connect(dl); dl.connect(pol); pol.connect(pn); pn.connect(C.master);
+  a1.connect(a2); a2.connect(occ); occ.connect(sh); sh.connect(g); g.connect(dl); dl.connect(pol); pol.connect(pn); pn.connect(C.master);
   // Bisect taps: analysers pass signal through untouched while exposing
   // per-stage energy, so a silent master can be blamed on filters vs pan.
   var anFQ=C.ctx.createAnalyser(); anFQ.fftSize=256; a2.connect(anFQ);
   var anPan=C.ctx.createAnalyser(); anPan.fftSize=256; pn.connect(anPan); anPan.connect(C.master);
-  ch.a1=a1; ch.a2=a2; ch.g=g; ch.dl=dl; ch.pol=pol; ch.pn=pn; ch.kind=kind; ch.occ=occ;
+  ch.a1=a1; ch.a2=a2; ch.g=g; ch.dl=dl; ch.pol=pol; ch.pn=pn; ch.kind=kind; ch.occ=occ; ch.sh=sh;
+  ch.drive=1;
   ch.anFQ=anFQ; ch.anPan=anPan; ch.lastG=1; ch.wired=false;
   wireChain(ch);
   return ch;
+}
+// y = tanh(k*x)/tanh(k): a hard limiter's smooth cousin, normalised so a signal
+// below clip keeps its level. k == 1 passes almost untouched, so the curve is
+// only rebuilt when the amplifier is actually clipping.
+function identityCurve(n){ var c=new Float32Array(n); for(var i=0;i<n;i++){ c[i]=i/(n-1)*2-1; } return c; }
+function clipCurve(n,k){
+  var c=new Float32Array(n), den=Math.tanh(k);
+  for(var i=0;i<n;i++){ var x=i/(n-1)*2-1; c[i]=Math.tanh(k*x)/den; }
+  return c;
+}
+function setClip(ch,k){
+  k=Math.max(1,Math.min(20,k||1));
+  if(ch.drive===undefined) ch.drive=1;
+  // Rebuilding the curve is cheap but not free: only when the drive has moved
+  // far enough to hear, which during a clip burst is a couple of times a second.
+  if(Math.abs(k-ch.drive)<0.15 && ch.sh.curve!==null) return;
+  ch.drive=k;
+  try{ ch.sh.curve=clipCurve(1024,k); }catch(e){}
+}
+// Amplifier-owned noise: mains hum (one oscillator per amplifier, not per page)
+// and the fan. Both sit at the amplifier output, so they sum into the master
+// bus rather than into a cabinet chain.
+function ampNodes(){
+  if(C.hum&&C.fan) return;
+  var t=C.ctx.currentTime;
+  var humOsc=C.ctx.createOscillator(); humOsc.type="sine"; humOsc.frequency.value=50;
+  var humGain=C.ctx.createGain(); humGain.gain.value=0;
+  humOsc.connect(humGain); humGain.connect(C.master); humOsc.start(t);
+  var len=C.ctx.sampleRate*2, buf=C.ctx.createBuffer(1,len,C.ctx.sampleRate), dat=buf.getChannelData(0);
+  for(var i=0;i<len;i++){ dat[i]=Math.random()*2-1; }
+  var fanSrc=C.ctx.createBufferSource(); fanSrc.buffer=buf; fanSrc.loop=true;
+  var fanLp=C.ctx.createBiquadFilter(); fanLp.type="lowpass"; fanLp.frequency.value=900; fanLp.Q.value=0.4;
+  var fanGain=C.ctx.createGain(); fanGain.gain.value=0;
+  fanSrc.connect(fanLp); fanLp.connect(fanGain); fanGain.connect(C.master); fanSrc.start(t);
+  C.hum={osc:humOsc,gain:humGain}; C.fan={src:fanSrc,gain:fanGain};
+}
+function applyAmpAudio(a){
+  // No payload means this page is not the amplifier's owner. Ramp to silence if
+  // the nodes exist, but never create them: an 8|600 rig would otherwise carry a
+  // hum oscillator and a noise buffer per input for nothing.
+  if(!a){
+    if(C.hum){ try{ C.hum.gain.gain.setTargetAtTime(0,C.ctx.currentTime,0.2); C.fan.gain.gain.setTargetAtTime(0,C.ctx.currentTime,0.3); }catch(e){} }
+    return;
+  }
+  ampNodes();
+  var t=C.ctx.currentTime;
+  var hdb=(a&&a.hum)?a.hum.db:-120;
+  var hz=(a&&a.hum&&a.hum.hz)?a.hum.hz:50;
+  var hg=hdb>-100?Math.pow(10,hdb/20):0;
+  var fdb=(a&&a.fan)?a.fan.db:-120;
+  var fg=fdb>-100?Math.pow(10,fdb/20):0;
+  try{
+    C.hum.osc.frequency.setTargetAtTime(hz,t,0.2);
+    C.hum.gain.gain.setTargetAtTime(hg,t,0.2);
+    C.fan.gain.gain.setTargetAtTime(fg,t,0.3);
+  }catch(e){}
 }
 // Chains are built before (or survive across) source (re)creation, and a
 // fresh source starts unwired: this is the single place that feeds audio
@@ -269,10 +330,15 @@ function ntxUpdate(s){
     if(!C.listenerCur){ C.listenerCur={ p:C.listenerTgt.p.slice(), f:C.listenerTgt.f.slice(), u:C.listenerTgt.u.slice() }; }
     else if(!C.listenerCur.u){ C.listenerCur.u=C.listenerTgt.u.slice(); }
   }catch(e){}
-  var seen={},i,d,ch,gsum=0;
+  var seen={},i,d,ch,gsum=0,clipSeen=0;
   for(i=0;i<s.sp.length;i++){ d=s.sp[i]; seen[d.id]=1; ch=C.chains[d.id]; gsum+=d.g;
     if(!ch||ch.kind!==d.kind){ if(ch) dropChain(ch); ch=buildChain(d.kind); C.chains[d.id]=ch; }
     wireChain(ch);
+    // Amplifier flat-topping. Optional field: a tap from an older page never
+    // carries it and the shaper simply stays transparent.
+    var cl=(typeof d.cl==="number")?d.cl:1;
+    if(cl>1.02) clipSeen=1;
+    try{ setClip(ch,cl); }catch(e){}
     try{
       smooth(ch.g.gain,d.g); ch.lastG=d.g;
       // Occlusion cutoff rides the same ramp as the gain: a hard frequency
@@ -305,7 +371,20 @@ function ntxUpdate(s){
   // and real energy vanishing downstream (chain bug, never the source).
   if(gsum<=0.001){ C.checks=0; C.zeroWins=0; C.tsum=0; C.tsq=0; C.tn=0; }
   else try{
-    if(C.audio&&C.audio.readyState>1&&!C.audio.paused&&C.audio.currentTime>0.5&&!C.taintReported){
+    if(C.audio&&C.audio.readyState>1&&!C.audio.paused&&C.audio.currentTime>0.5){
+      // Source RMS, reported every push. This is what the amplifier meters read:
+      // the mixer faders say what was ASKED for, this says what was actually
+      // playing, and only the latter makes the LEDs move with the programme.
+      var rmsBuf=new Uint8Array(C.tapAn.fftSize), sumSq=0;
+      C.tapAn.getByteTimeDomainData(rmsBuf);
+      for(var z=0;z<rmsBuf.length;z++){ var dv=rmsBuf[z]-128; sumSq+=dv*dv; }
+      var rms=Math.sqrt(sumSq/rmsBuf.length)/128;
+      if(!C.lastRmsAt||(C.ctx.currentTime-C.lastRmsAt)>0.05){
+        C.lastRmsAt=C.ctx.currentTime;
+        ntxReport({t:"rms",v:Math.round(rms*1000)/1000,c:clipSeen});
+      }
+      clipSeen=0;
+      if(!C.taintReported){
       var buf=new Uint8Array(C.analyser.fftSize);
       C.analyser.getByteTimeDomainData(buf);
       var sum=0,k; for(k=0;k<buf.length;k++){ sum+=Math.abs(buf[k]-128); }
@@ -336,7 +415,11 @@ function ntxUpdate(s){
           ntxReport({t:"tainted",srcAudible:ssum>0,srcMean:Math.round(mean*10)/10,srcVar:Math.round(variance*100)/100,chains:Object.keys(C.chains).length,fq:Math.round(fqSum),pan:Math.round(panSum),g:lastG});
         }
         C.checks=0; C.zeroWins=0; C.tsum=0; C.tsq=0; C.tn=0; }
+      }
     }
   }catch(e){}
+  // Amplifier hum / fan, refreshed on every push so a rig that is switched off
+  // (or whose page lost the amplifier) goes quiet instead of droning forever.
+  try{ applyAmpAudio(s.amp); }catch(e){}
 }
 </script></body></html>

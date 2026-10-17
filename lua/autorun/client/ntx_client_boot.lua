@@ -10,9 +10,14 @@ include("ntx_dsp.lua")
 include("ntx_occlusion.lua")
 include("ntx_probe.lua")
 include("ntx_webaudio.lua")
+-- Amplifier state arrives over its own message and is consumed by the WebAudio
+-- tap builder as well as the meters, so it has to exist before the panels are
+-- built.
+include("ntx_amp_meters.lua")
 include("ntx_gizmos.lua")
 include("ntx_engine_panel.lua")
 include("ntx_mixer_ui.lua")
+include("ntx_amp_ui.lua")
 
 concommand.Add("ntx_mixer_test_levels", function()
   for key, chan in pairs(NTx.Stations or {}) do

@@ -9,6 +9,11 @@ NTx_DspLoaded = true
 
 NTx = NTx or {}
 NTx.Graph = { inputs = {}, speakers = {}, mixers = {}, fallbacks = {} }
+-- Amplifier state arrives in its own message (ntx_amp_meters.lua owns the
+-- receive), keyed by entity index. Declared here so a partial reload cannot
+-- leave the fallback path reading a table that does not exist yet.
+NTx.Amps = NTx.Amps or {}
+NTx.PageRms = NTx.PageRms or {}
 NTx.Stations = NTx.Stations or {}
 NTx.WantStations = NTx.WantStations or {}
 -- IGModAudioChannel is userdata: arbitrary fields cannot be stamped on it,
@@ -126,6 +131,28 @@ local function nearestFallback(mixerEnt, listenerPos)
 end
 
 local FB_CONE = { Inner = 360, Outer = 360, OuterVol = 1 }
+
+-- Amplifier attenuation on the fallback path. BASS opens one tap per input
+-- instead of one per cabinet, so there is nothing per-speaker to colour: the
+-- worst amplifier on the mixer wins. Protection, standby and a burnt amplifier
+-- are all real mutes, and a rig that loses its amplifiers should lose the input
+-- here too rather than keep playing straight through the failure. Clipping
+-- itself is not rendered - the BASS backend has no waveshaper.
+function NTx.AmpMixerGain(mixer)
+  if not IsValid(mixer) then return 1 end
+  local worst = nil
+  for _, spk in ipairs((NTx.Graph and NTx.Graph.speakers) or {}) do
+    local amp = IsValid(spk.ent) and spk.ent.GetAmp and spk.ent:GetAmp() or nil
+    if IsValid(amp) and not spk.ent:GetActive() then
+      local ch = NTx.AmpSpeakerChannel and NTx.AmpSpeakerChannel(amp, spk.ent) or 0
+      if ch > 0 and NTx.AmpTapData then
+        local g = NTx.AmpTapData(amp, ch).g
+        worst = math.min(worst or 1, g)
+      end
+    end
+  end
+  return worst or 1
+end
 
 -- BASS error codes that mean "plain stereo may still work" (StreamRadio
 -- retry_errors_non3d set: 3D-Stream-Radio lua/streamradio_core/stream.lua).
@@ -304,6 +331,10 @@ hook.Add("Think", "NTx.DspThink", function()
     end
     local dist = math.sqrt(distSqr)
     local baseGain = fallbackGain(mrec, input.ent) * (input.vol or 1) * (bus.trim or 1) * wall
+    -- Amplifier state (foldback, protection, standby, burnt) rides on the tap.
+    local ampGain = NTx.AmpMixerGain(input.mixer)
+    if ampGain <= 0 then continue end
+    baseGain = baseGain * ampGain
     -- Rig coverage: the bus tap stands in for the whole mixer, so it gets
     -- the best cone gain any of the mixer's MID cabinets gives the
     -- listener (1 in a throw, 0.2/0.06 floor outside it).

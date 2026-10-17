@@ -24,6 +24,7 @@ local C_SUB = Color(255, 150, 90)
 local C_MID = Color(120, 220, 140)
 local C_INPUT = Color(200, 200, 120)
 local C_MIXER = Color(220, 220, 220)
+local C_AMP = Color(245, 210, 120)
 
 function NTx.IsMine(ent)
   local ply = LocalPlayer()
@@ -245,6 +246,25 @@ hook.Add("PostDrawTranslucentRenderables", "NTx.Gizmos", function(depth, sky)
       if IsValid(fb.ent) and IsValid(fb.mixer) and NTx.IsMine(fb.ent) then
         local a, b = entPos(fb.ent), entPos(fb.mixer)
         if a and b then arrow(a, b, C_MIXER) end
+      end
+    end
+    -- mixer -> amplifier -> cabinet: the signal path, so a rig that is patched
+    -- wrong reads as a chain instead of a scatter of speakers.
+    for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
+      if IsValid(amp) and NTx.IsMine(amp) then
+        local a = entPos(amp)
+        if a then
+          if IsValid(amp:GetMixer()) then
+            local b = entPos(amp:GetMixer())
+            if b then arrow(b, a, C_AMP) end
+          end
+          for _, spk in ipairs(g.speakers or {}) do
+            if IsValid(spk.ent) and spk.ent:GetAmp() == amp and a then
+              local b = entPos(spk.ent)
+              if b then arrow(a, b, C_AMP) end
+            end
+          end
+        end
       end
     end
   end
