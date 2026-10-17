@@ -134,7 +134,8 @@ local function stepAmp(amp, now, dt)
   if not p then return end
   local st = NTx.AmpState[amp]
   if not st then
-    st = { tsink = NTx.AmpAmbient(amp), tdev = NTx.AmpAmbient(amp), fan = 0, loadFrac = 0 }
+    st = { tsink = NTx.AmpAmbient(amp), tdev = NTx.AmpAmbient(amp), fan = 0, loadFrac = 0,
+      bad = 0, good = 0, quiet = 0 }
     for i = 1, 8 do st[i] = { spk = {} } end
     NTx.AmpState[amp] = st
   end
@@ -160,7 +161,7 @@ local function stepAmp(amp, now, dt)
     st.good = (st.good or 0) + dt
     if st.good > 2 then st.bad = 0 end
   end
-  local locked = st.bad > 1
+  local locked = (st.bad or 0) > 1
 
   -- Auto standby: no signal for the configured dwell time drops the output
   -- stage into its reduced supply (MA2400 manual 4.3.2, CDi Power Save).
@@ -595,8 +596,8 @@ function NTx.AmpInjectFault(amp, name)
     amp:SetClipLatch(false)
     return true
   end
-  if name == "brownout" then amp:SetMainsOverride(math.max(math.round(NTx.AmpNominalMains() * 0.55), 20)) end
-  if name == "overvoltage" then amp:SetMainsOverride(math.round(NTx.AmpNominalMains() * 1.45)) end
+  if name == "brownout" then amp:SetMainsOverride(math.max(math.Round(NTx.AmpNominalMains() * 0.55), 20)) end
+  if name == "overvoltage" then amp:SetMainsOverride(math.Round(NTx.AmpNominalMains() * 1.45)) end
   if name == "thermal" then amp:SetFanOn(false) end
   if name == "kill" then amp:SetDamage(1) end
   amp.Injected = name

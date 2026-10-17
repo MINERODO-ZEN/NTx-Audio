@@ -300,7 +300,7 @@ function NTx.AmpFanFrac(p, tsink)
 end
 
 function NTx.AmpFanRpm(p, fanFrac)
-  return math.round((p and p.fan and p.fan.rpm or 3000) * math.Clamp(fanFrac or 0, 0, 1))
+  return math.Round((p and p.fan and p.fan.rpm or 3000) * math.Clamp(fanFrac or 0, 0, 1))
 end
 
 -- Power factor: pulsed capacitor-input supplies pull badly at light load.
