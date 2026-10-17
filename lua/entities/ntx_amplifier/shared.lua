@@ -66,6 +66,13 @@ function ENT:SetupDataTables()
   self:NetworkVar("Bool", 8, "ClipLatch", { KeyName = "cliplatch", Edit = { type = "Boolean", order = 10, category = "NTx Amp Sim" } })
 
   self:NetworkVar("Entity", 0, "Mixer")
+
+  -- Wire ports follow the channel count. NetworkVarNotify has to be called from
+  -- here: it is an entity method, injected at runtime, so it does not exist on
+  -- the ENT table at file scope. self.OnChannelsChanged is safe to look up at
+  -- this point because SetupDataTables runs when an entity SPAWNS, long after
+  -- this whole file has finished loading.
+  self:NetworkVarNotify("Channels", self.OnChannelsChanged)
 end
 
 -- Stamp a profile onto the entity. Every "this amp is a different kind of box"
@@ -194,8 +201,3 @@ end
 function ENT:OnChannelsChanged()
   self:CreateWirePorts()
 end
-
--- Registered here, at the bottom of the file, and on the CLASS rather than on
--- an instance: NetworkVarNotify stores the callback reference when it runs, and
--- the function above does not exist yet while SetupDataTables is assembled.
-ENT:NetworkVarNotify("Channels", ENT.OnChannelsChanged)
