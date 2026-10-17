@@ -1,0 +1,342 @@
+<!doctype html><html><body><script>
+// NTx WebAudio mixer page. Loaded from asset:// (local addon file), so the
+// page itself never touches the network; only the Icecast <audio> does.
+// Lua pushes mixer state via ntxUpdate() at ~10 Hz; status flows back via
+// the ntx.status() bridge registered from Lua (AddFunction).
+  var C={ctx:null,audio:null,src:null,master:null,analyser:null,tapAn:null,chains:{},url:"",
+  zeroWins:0,checks:0,tsum:0,tsq:0,tn:0,taintReported:false,errReported:false,lastState:null,helloSent:false,
+  pausedMs:0,stallSent:false};
+// Any uncaught error must reach Lua: a dead page must never look healthy.
+window.onerror=function(m,s,l,c){ try{ ntxReport({t:"jserror",msg:String(m).slice(0,180),line:l||0}); }catch(e){} };
+function ntxReport(o){ try{ ntx.status(JSON.stringify(o)); }catch(e){} }
+function ensureCtx(){
+  if(C.ctx) return true;
+  var AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return false;
+  C.ctx=new AC();
+  C.master=C.ctx.createGain(); C.master.gain.value=1;
+  C.analyser=C.ctx.createAnalyser(); C.analyser.fftSize=256;
+  C.tapAn=C.ctx.createAnalyser(); C.tapAn.fftSize=256;
+  // Limiter after the sum: N full-scale streams summing to >0 dBFS clip in
+  // the destination and distort. Normalisation handles the steady-state
+  // sum; this catches the transients that slip through it.
+  C.comp=C.ctx.createDynamicsCompressor();
+  try{
+    C.comp.threshold.value=-9; C.comp.knee.value=6; C.comp.ratio.value=14;
+    C.comp.attack.value=0.004; C.comp.release.value=0.25;
+  }catch(e){}
+  C.master.connect(C.analyser); C.analyser.connect(C.comp); C.comp.connect(C.ctx.destination);
+  // Motion smoothing runs per animation frame; pushes only supply targets.
+  C.smoothMs=60; C.maxRate=0; C.lastFrame=0; C.listenerCur=null; C.listenerTgt=null;
+  if(!C.rafStarted){
+    C.rafStarted=true;
+    var raf=function(){
+      try{ motionFrame(); }catch(e){}
+      requestAnimationFrame(raf);
+    };
+    requestAnimationFrame(raf);
+  }
+  return true;
+}
+// Frame-rate independent exponential smoothing: cur += (tgt-cur)*(1-e^(-dt/tau)).
+// Interpolating here (not at push rate) is what removes the clicks when
+// speakers or the listener move: 10-15 Hz staircases became continuous.
+function smoothVec(cur,tgt,dt,maxRate){
+  var a=1-Math.exp(-dt/(C.smoothMs/1000));
+  var nx=cur[0]+(tgt[0]-cur[0])*a;
+  var ny=cur[1]+(tgt[1]-cur[1])*a;
+  var nz=cur[2]+(tgt[2]-cur[2])*a;
+  if(maxRate>0){
+    var dx=nx-cur[0],dy=ny-cur[1],dz=nz-cur[2];
+    var d=Math.sqrt(dx*dx+dy*dy+dz*dz), lim=maxRate*dt;
+    if(d>lim&&d>0){ var s=lim/d; nx=cur[0]+dx*s; ny=cur[1]+dy*s; nz=cur[2]+dz*s; }
+  }
+  cur[0]=nx; cur[1]=ny; cur[2]=nz;
+  return cur;
+}
+function motionFrame(){
+  if(!C.ctx) return;
+  var now=(typeof performance!=="undefined"&&performance.now)?performance.now():Date.now();
+  var dt=C.lastFrame?Math.min(0.1,(now-C.lastFrame)/1000):1/60;
+  C.lastFrame=now;
+  var mr=(C.maxRate>0)?C.maxRate:0;
+  // Listener: pose AND orientation, so walking never staircases either.
+  if(C.listenerCur&&C.listenerTgt){
+    smoothVec(C.listenerCur.p,C.listenerTgt.p,dt,mr);
+    smoothVec(C.listenerCur.f,C.listenerTgt.f,dt,0);
+    smoothVec(C.listenerCur.u,C.listenerTgt.u,dt,0);
+    try{
+      var cl=C.ctx.listener, pc=C.listenerCur.p, fc=C.listenerCur.f, uc=C.listenerCur.u;
+      var fl=Math.sqrt(fc[0]*fc[0]+fc[1]*fc[1]+fc[2]*fc[2])||1;
+      var ul=Math.sqrt(uc[0]*uc[0]+uc[1]*uc[1]+uc[2]*uc[2])||1;
+      // A proper orthonormal basis. The old hardcoded up=(0,0,1) is
+      // parallel to forward whenever the camera looks near vertical, and a
+      // degenerate listener basis makes the HRTF panner re-pick a
+      // convolution pair mid-quantum - that is the click you get when
+      // turning the camera (moving was fine: only the orientation moved).
+      var fx=fc[0]/fl, fy=fc[1]/fl, fz=fc[2]/fl;
+      var ux=uc[0]/ul, uy=uc[1]/ul, uz=uc[2]/ul;
+      var dp=fx*ux+fy*uy+fz*uz;
+      ux-=fx*dp; uy-=fy*dp; uz-=fz*dp;
+      var ul2=Math.sqrt(ux*ux+uy*uy+uz*uz);
+      if(ul2<1e-4){ // still parallel after projection: pick any perpendicular
+        ux=Math.abs(fx)<0.9?-fx:0; uy=Math.abs(fx)<0.9?0:-fy; uz=Math.abs(fx)<0.9?1:0;
+        var d2=fx*ux+fy*uy+fz*uz;
+        ux-=fx*d2; uy-=fy*d2; uz-=fz*d2;
+        ul2=Math.sqrt(ux*ux+uy*uy+uz*uz)||1;
+      }
+      ux/=ul2; uy/=ul2; uz/=ul2;
+      // setTargetAtTime instead of raw .value: the browser ramps the
+      // listener basis itself, so an orientation sweep is continuous
+      // instead of a staircase of instantaneous steps.
+      var tNow=C.ctx.currentTime, lt=0.04;
+      if(cl.positionX){
+        if(cl.positionX.setTargetAtTime){
+          cl.positionX.setTargetAtTime(pc[0],tNow,lt);
+          cl.positionY.setTargetAtTime(pc[1],tNow,lt);
+          cl.positionZ.setTargetAtTime(pc[2],tNow,lt);
+          cl.forwardX.setTargetAtTime(fx,tNow,lt);
+          cl.forwardY.setTargetAtTime(fy,tNow,lt);
+          cl.forwardZ.setTargetAtTime(fz,tNow,lt);
+          cl.upX.setTargetAtTime(ux,tNow,lt);
+          cl.upY.setTargetAtTime(uy,tNow,lt);
+          cl.upZ.setTargetAtTime(uz,tNow,lt);
+        } else {
+          cl.positionX.value=pc[0]; cl.positionY.value=pc[1]; cl.positionZ.value=pc[2];
+          cl.forwardX.value=fx; cl.forwardY.value=fy; cl.forwardZ.value=fz;
+          cl.upX.value=ux; cl.upY.value=uy; cl.upZ.value=uz;
+        }
+      } else {
+        cl.setPosition(pc[0],pc[1],pc[2]);
+        cl.setOrientation(fx,fy,fz,ux,uy,uz);
+      }
+    }catch(e){}
+  }
+  for(var id in C.chains){
+    var ch=C.chains[id];
+    if(!ch.tgt||!ch.cur) continue;
+    smoothVec(ch.cur,ch.tgt,dt,mr);
+    try{
+      var p=ch.cur;
+      if(ch.pn.positionX){ ch.pn.positionX.value=p[0]; ch.pn.positionY.value=p[1]; ch.pn.positionZ.value=p[2]; }
+      else{ ch.pn.setPosition(p[0],p[1],p[2]); }
+    }catch(e){}
+  }
+}
+function ntxPing(){ ntxReport({t:"pong"}); }
+// Boot handshake: proves this script parsed and ran, and retries until the
+// Lua bridge exists. Without it a parse error is indistinguishable from a
+// quiet page, because the onerror handler lives in the broken script too.
+var hbTries=0;
+var hbIv=setInterval(function(){
+  try{ if(window.ntx&&ntx.status){ C.helloSent=true; ntxReport({t:"hello",v:5}); clearInterval(hbIv); return; } }catch(e){}
+  if(++hbTries>24) clearInterval(hbIv);
+},500);
+function playAudio(){
+  if(!C.audio) return;
+  var nowMs=(typeof performance!=="undefined"&&performance.now)?performance.now():Date.now();
+  // play() on an already-playing element is a harmless no-op promise, but
+  // hammering it every push is still wasteful: 2 s gate.
+  if(C.lastPlayTry&&nowMs-C.lastPlayTry<2000) return;
+  C.lastPlayTry=nowMs;
+  try{ var pr=C.audio.play(); if(pr&&pr.catch){ pr.catch(function(){}); } }catch(e){}
+}
+function ntxResume(){
+  if(!ensureCtx()){ ntxReport({t:"state",state:"unsupported"}); return; }
+  var p=null; try{ p=C.ctx.resume(); }catch(e){}
+  // Resuming the context is only half the gesture: an element whose first
+  // play() was rejected stays paused forever unless play() is called again.
+  playAudio();
+  if(p&&p.then){ p.then(function(){ ntxReport({t:"state",state:C.ctx.state}); }); }
+  else{ ntxReport({t:"state",state:C.ctx.state}); }
+}
+function setUrl(u){
+  if(u===C.url) return;
+  C.url=u; C.taintReported=false; C.zeroWins=0; C.checks=0; C.tsum=0; C.tsq=0; C.tn=0;
+  if(C.audio){ try{C.audio.pause();}catch(e){} C.audio=null; }
+  if(!ensureCtx()) return;
+  if(C.src){ try{C.src.disconnect();}catch(e){} C.src=null; }
+  C.audio=new Audio(); C.audio.crossOrigin="anonymous"; C.audio.preload="auto";
+  try{ C.src=C.ctx.createMediaElementSource(C.audio); }
+  catch(e){ ntxReport({t:"error",err:"mes-fail"}); return; }
+  // Tap analyser straight on the source: separates "source outputs zeros"
+  // (CORS taint / dead air) from "chains eat the signal" downstream.
+  try{ C.src.connect(C.tapAn); }catch(e){}
+  // New source, new edges: rewire every live chain head to it.
+  try{ for(var wid in C.chains){ C.chains[wid].wired=false; wireChain(C.chains[wid]); } }catch(e){}
+  // NOTE: the source feeds ONLY the per-speaker chains below, never master
+  // directly. A dry src->master connection would play the unfiltered stereo
+  // stream over everything (fullrange 2D everywhere); the analyser already
+  // observes the mixed chain output via master.
+  C.audio.addEventListener("error",function(){
+    if(C.errReported) return; C.errReported=true;
+    // MEDIA_ERR code identifies the failure class: 1 aborted, 2 network,
+    // 3 decode, 4 source-unsupported. networkState: 0 empty, 1 idle,
+    // 2 loading, 3 no-source. Lua escalates repeats to BASS cover.
+    var code=0,ns=-1,rs=-1;
+    try{ code=(C.audio.error?C.audio.error.code:0)||0; }catch(e){}
+    try{ ns=C.audio.networkState; rs=C.audio.readyState; }catch(e){}
+    ntxReport({t:"error",err:"stream",code:code,ns:ns,rs:rs});
+    setTimeout(function(){ C.errReported=false; C.url=""; },5000);
+  });
+  C.audio.addEventListener("playing",function(){ ntxReport({t:"playing"}); });
+  C.audio.src=u;
+  playAudio();
+}
+function buildChain(kind){
+  var ch={nodes:[]};
+  function bq(type){ var f=C.ctx.createBiquadFilter(); f.type=type; f.frequency.value=80; f.Q.value=0.7071; return f; }
+  var a1,a2;
+  if(kind==="SUB"){ a1=bq("lowpass"); a2=bq("lowpass"); }
+  else{ a1=bq("highpass"); a2=bq("highpass"); }
+  // Occlusion lowpass: parked at 20 kHz (transparent) when the cabinet has
+  // line of sight, swept down when a wall/pillar is in the way. Wired
+  // permanently rather than reconnected on change: connect/disconnect churn
+  // on a live tap is itself a click.
+  var occ=C.ctx.createBiquadFilter();
+  occ.type="lowpass"; occ.frequency.value=20000; occ.Q.value=0.7071;
+  var g=C.ctx.createGain();
+  // Start silent, never at the Web Audio default of 1. A tap that appears
+  // (unmute / channel coming back) would otherwise blast at full volume for
+  // one push interval before the commanded gain ramps in.
+  g.gain.value=0;
+  var dl=C.ctx.createDelay(1.0);
+  var pol=C.ctx.createGain();
+  var pn=C.ctx.createPanner();
+  pn.panningModel="HRTF"; pn.distanceModel="inverse"; pn.refDistance=300; pn.rolloffFactor=1;
+  a1.connect(a2); a2.connect(occ); occ.connect(g); g.connect(dl); dl.connect(pol); pol.connect(pn); pn.connect(C.master);
+  // Bisect taps: analysers pass signal through untouched while exposing
+  // per-stage energy, so a silent master can be blamed on filters vs pan.
+  var anFQ=C.ctx.createAnalyser(); anFQ.fftSize=256; a2.connect(anFQ);
+  var anPan=C.ctx.createAnalyser(); anPan.fftSize=256; pn.connect(anPan); anPan.connect(C.master);
+  ch.a1=a1; ch.a2=a2; ch.g=g; ch.dl=dl; ch.pol=pol; ch.pn=pn; ch.kind=kind; ch.occ=occ;
+  ch.anFQ=anFQ; ch.anPan=anPan; ch.lastG=1; ch.wired=false;
+  wireChain(ch);
+  return ch;
+}
+// Chains are built before (or survive across) source (re)creation, and a
+// fresh source starts unwired: this is the single place that feeds audio
+// into a chain head. Without it the filters process dangling silence.
+function wireChain(ch){
+  if(!C.src||!ch||ch.wired) return;
+  try{ C.src.connect(ch.a1); ch.wired=true; }catch(e){}
+}
+function dropChain(ch){
+  try{ if(C.src){ C.src.disconnect(ch.a1); } }catch(e){}
+  try{ ch.a1.disconnect(); }catch(e){}
+}
+// Gains ride setTargetAtTime so 10 Hz Lua pushes never zipper-click
+// (Glide engine_stream pattern: smooth param motion in-page).
+function smooth(param,v){ try{ param.setTargetAtTime(v,C.ctx.currentTime,0.05); }catch(e){ try{param.value=v;}catch(x){} } }
+function ntxUpdate(s){
+  if(!ensureCtx()) return;
+  // Self-report: contexts that start running on their own (no autoplay
+  // policy on old Chromium) would otherwise never tell Lua, leaving the
+  // ENABLE notice stuck up while audio already plays.
+  if(C.ctx.state!==C.lastState){ C.lastState=C.ctx.state; ntxReport({t:"state",state:C.ctx.state}); }
+  // Self-heal: context running but element stalled (first play() rejected
+  // pre-gesture) restarts on its own; the 2 s gate inside playAudio() keeps
+  // this push-rate-safe.
+  try{
+    if(C.audio&&C.audio.paused&&C.ctx.state==="running"){
+      C.pausedMs=(C.pausedMs||0)+100;
+      playAudio();
+      // Still stuck after 8 s of pushes: a page this old cannot start the
+      // element at all (stale hosted file). Tell Lua so it can fall back.
+      if(C.pausedMs>8000&&!C.stallSent){ C.stallSent=true; ntxReport({t:"stalled"}); }
+    } else if(C.audio&&!C.audio.paused){ C.pausedMs=0; C.stallSent=false; }
+  }catch(e){}
+  // Contract handshake: remotely hosted copies can skew behind addon
+  // updates; Lua warns instead of driving an unknown page blind.
+  if(!C.helloSent){ C.helloSent=true; ntxReport({t:"hello",v:5}); }
+  if(!s||!s.url) return;
+  if(s.url!==C.url) setUrl(s.url);
+  // Limiter is a safety net, not a compressor: -0.5 dBFS / 20:1 in practice,
+  // and fully transparent (ratio 1) when the operator disables it.
+  try{
+    var limOn=(s.lim===1||s.lim===true);
+    C.comp.ratio.value=limOn?20:1;
+    C.comp.threshold.value=limOn?(typeof s.limDb==="number"?s.limDb:-0.5):0;
+    C.comp.attack.value=0.001; C.comp.release.value=0.25;
+  }catch(e){}
+  try{
+    if(typeof s.smoothMs==="number") C.smoothMs=Math.max(0,s.smoothMs);
+    if(typeof s.maxRate==="number") C.maxRate=Math.max(0,s.maxRate);
+  }catch(e){}
+  try{
+    var L=s.listener;
+    C.listenerTgt={ p:[L.px,L.py,L.pz], f:[L.fx,L.fy,L.fz], u:[(typeof L.upx==="number"?L.upx:0),(typeof L.upy==="number"?L.upy:0),(typeof L.upz==="number"?L.upz:1)] };
+    if(!C.listenerCur){ C.listenerCur={ p:C.listenerTgt.p.slice(), f:C.listenerTgt.f.slice(), u:C.listenerTgt.u.slice() }; }
+    else if(!C.listenerCur.u){ C.listenerCur.u=C.listenerTgt.u.slice(); }
+  }catch(e){}
+  var seen={},i,d,ch,gsum=0;
+  for(i=0;i<s.sp.length;i++){ d=s.sp[i]; seen[d.id]=1; ch=C.chains[d.id]; gsum+=d.g;
+    if(!ch||ch.kind!==d.kind){ if(ch) dropChain(ch); ch=buildChain(d.kind); C.chains[d.id]=ch; }
+    wireChain(ch);
+    try{
+      smooth(ch.g.gain,d.g); ch.lastG=d.g;
+      // Occlusion cutoff rides the same ramp as the gain: a hard frequency
+      // step on the filter is an audible sweep-click.
+      var oc=(typeof d.occlp==="number")?d.occlp:20000;
+      if(ch.occ){ try{ ch.occ.frequency.setTargetAtTime(Math.max(60,Math.min(20000,oc)),C.ctx.currentTime,0.08); }catch(e){} }
+      ch.dl.delayTime.value=d.d/1000; ch.pol.gain.value=d.inv?-1:1;
+      ch.pn.refDistance=300; ch.pn.maxDistance=d.maxd; ch.pn.rolloffFactor=1;
+      ch.pn.coneInnerAngle=d.ci; ch.pn.coneOuterAngle=d.co; ch.pn.coneOuterGain=d.cov;
+      // Position becomes a TARGET; motionFrame() chases it smoothly.
+      var tp=[d.px,d.py,d.pz];
+      if(!ch.tgt){ ch.tgt=tp; ch.cur=tp.slice(); }
+      else{ ch.tgt[0]=tp[0]; ch.tgt[1]=tp[1]; ch.tgt[2]=tp[2]; }
+    }catch(e){}
+  }
+  for(var id in C.chains){ if(!seen[id]){ dropChain(C.chains[id]); delete C.chains[id]; } }
+  // Normalisation: Lua computes one factor across every open page/tap
+  // (pages are separate AudioContexts that sum at the OS device, so a page
+  // cannot see its siblings). Fall back to this page's own sum if absent.
+  try{
+    var target=(typeof s.norm==="number")?s.norm:(gsum>1?(1/Math.sqrt(gsum)):1);
+    target=Math.max(0.12,Math.min(1,target));
+    smooth(C.master.gain,target);
+  }catch(e){}
+  // Taint sampling only counts while taps are actually commanded audible:
+  // a muted/gainless rig reads as analyser silence too, which is not CORS.
+  // Tap mean/variance separates the three silences: exact digital zeros
+  // (CORS taint OR true silence), DC-offset dead air (nonzero mean, ~zero
+  // variance — inaudible, and correctly stripped by the highpass chains),
+  // and real energy vanishing downstream (chain bug, never the source).
+  if(gsum<=0.001){ C.checks=0; C.zeroWins=0; C.tsum=0; C.tsq=0; C.tn=0; }
+  else try{
+    if(C.audio&&C.audio.readyState>1&&!C.audio.paused&&C.audio.currentTime>0.5&&!C.taintReported){
+      var buf=new Uint8Array(C.analyser.fftSize);
+      C.analyser.getByteTimeDomainData(buf);
+      var sum=0,k; for(k=0;k<buf.length;k++){ sum+=Math.abs(buf[k]-128); }
+      var ssum=0; try{
+        var tbuf=new Uint8Array(C.tapAn.fftSize);
+        C.tapAn.getByteTimeDomainData(tbuf);
+        for(k=0;k<tbuf.length;k++){ ssum+=Math.abs(tbuf[k]-128); C.tsum+=tbuf[k]; C.tsq+=tbuf[k]*tbuf[k]; C.tn++; }
+      }catch(e){}
+      C.checks++; if(sum===0){ C.zeroWins++; }
+      if(C.checks>=30){
+        if(C.zeroWins===C.checks){
+          C.taintReported=true;
+          var mean=C.tn>0?(C.tsum/C.tn):128;
+          var variance=C.tn>0?(C.tsq/C.tn-mean*mean):0;
+          // Bisect: energy right after the filters and right after the
+          // panner, first chain only. Pinpoints the eating node.
+          var fqSum=0,panSum=0,lastG=0;
+          try{
+            var ids=Object.keys(C.chains);
+            if(ids.length>0){
+              var c0=C.chains[ids[0]]; lastG=c0.lastG||0;
+              var fb=new Uint8Array(256); c0.anFQ.getByteTimeDomainData(fb);
+              for(var m=0;m<fb.length;m++){ fqSum+=Math.abs(fb[m]-128); }
+              var pb=new Uint8Array(256); c0.anPan.getByteTimeDomainData(pb);
+              for(var q=0;q<pb.length;q++){ panSum+=Math.abs(pb[q]-128); }
+            }
+          }catch(e){}
+          ntxReport({t:"tainted",srcAudible:ssum>0,srcMean:Math.round(mean*10)/10,srcVar:Math.round(variance*100)/100,chains:Object.keys(C.chains).length,fq:Math.round(fqSum),pan:Math.round(panSum),g:lastG});
+        }
+        C.checks=0; C.zeroWins=0; C.tsum=0; C.tsq=0; C.tn=0; }
+    }
+  }catch(e){}
+}
+</script></body></html>

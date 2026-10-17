@@ -1,0 +1,6 @@
+{
+  "title": "NTx Audio (port)",
+  "type": "tool",
+  "tags": [ "realism" ],
+  "ignore": [ "*.psd", "*.md", "src/*", ".git*" ]
+}

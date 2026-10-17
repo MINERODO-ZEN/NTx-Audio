@@ -1,0 +1,14 @@
+# Garry's Mod addon runtime noise
+*.gma
+# Local tools / scratch
+*.log
+*.tmp
+*.bak
+*.swp
+*.psd
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

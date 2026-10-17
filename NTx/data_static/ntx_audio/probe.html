@@ -1,0 +1,140 @@
+<!doctype html><html><body><script>
+// NTx WebAudio capability probe. Loaded from asset:// so no network is
+// involved in the probe itself.
+// Stage A: plain <audio> with NO crossorigin attribute — answers "can this
+// engine fetch and decode the URL at all" (same as typing it into the
+// browser address bar). Stage B: crossOrigin="anonymous" + MediaElement
+// graph — answers the CORS question (clean vs tainted). A plain-playing
+// but CORS-failing stream means the response chain (redirects? proxy?)
+// breaks cross-origin fetch, not the bytes themselves.
+function ntxReport(o){ try{ ntx.probeResult(JSON.stringify(o)); }catch(e){} }
+function runProbe(url){
+  var r={api:"none",biquad:false,panner:false,delay:false,cpt:"?",
+    plain:"skipped",taint:"skipped",
+    fstatus:"pending",ftype:"?",facao:"?",fmagic:"?",
+    nocors:"pending",csp:"none",note:""};
+  // Policy forensics: if the host page carries a Content-Security-Policy
+  // (or similar) that blocks subresources, every network stage fails
+  // while navigation still works. This event names the exact directive.
+  try{
+    document.addEventListener("securitypolicyviolation",function(e){
+      try{ r.csp=(e.violatedDirective||"?")+"|"+(e.blockedURI||"?"); }
+      catch(x){ r.csp="fired"; }
+      ntxReport(r);
+    });
+  }catch(e){}
+  try{
+    var AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC){ r.note="no AudioContext"; ntxReport(r); return; }
+    var ctx=new AC();
+    try{ var b=ctx.createBiquadFilter(); b.type="highpass"; b.frequency.value=80; r.biquad=true; }catch(e){}
+    try{ var p=ctx.createPanner(); r.panner=true; }catch(e){}
+    try{ var d=ctx.createDelay(1.0); r.delay=true; }catch(e){}
+    try{ r.cpt=new Audio().canPlayType('audio/ogg; codecs="vorbis"')||"empty"; }catch(e){ r.cpt="throw"; }
+    r.api=(r.biquad&&r.panner&&r.delay)?"full":"partial";
+    if(!url){ r.note="api-only"; ntxReport(r); try{ctx.close();}catch(e){} return; }
+    stageA();
+    stageC();
+    stageD();
+    function stageA(){
+      var a0=new Audio(); a0.preload="auto";
+      var done=false, iv=null, to=null;
+      function settle(v,note){
+        if(done) return; done=true;
+        try{ clearTimeout(to); }catch(e){}
+        try{ clearInterval(iv); }catch(e){}
+        r.plain=v; if(note) r.note=note;
+        try{a0.pause();}catch(e){}
+        stageB();
+      }
+      to=setTimeout(function(){ settle("stalled",(ctx.state==="suspended")?"needs-gesture":"no-progress"); },4000);
+      a0.addEventListener("error",function(){
+        var c=0; try{ c=(a0.error?a0.error.code:0)||0; }catch(e){}
+        settle("error"+c);
+      });
+      iv=setInterval(function(){
+        try{
+          if(a0.currentTime>0.2&&!a0.paused){ settle("playing"); }
+        }catch(e){}
+      },250);
+      try{ a0.src=url; var pr=a0.play(); if(pr&&pr.catch){ pr.catch(function(){}); } }catch(e){}
+    }
+    // Stage C: raw fetch forensics. Plain GET (no Range header, so no CORS
+    // preflight): reports the real status, the readable headers and the
+    // first 4 body bytes, then cancels. Tells "fetch layer" apart from
+    // "media element" failures. NOTE: custom icy-* headers are hidden from
+    // JS unless exposed, so only status/type/ACAO/magic are ground truth.
+    function stageC(){
+      if(typeof fetch!=="function"){ r.fstatus="no-fetch"; ntxReport(r); return; }
+      var done=false;
+      var to=setTimeout(function(){
+        if(done) return; done=true;
+        r.fstatus="timeout"; ntxReport(r);
+      },8000);
+      fetch(url,{mode:"cors",redirect:"follow",credentials:"omit"}).then(function(resp){
+        if(done) return;
+        r.fstatus=resp.status;
+        try{
+          r.ftype=resp.headers.get("content-type")||"?";
+          r.facao=resp.headers.get("access-control-allow-origin")||"missing";
+        }catch(e){}
+        if(!resp.body||!resp.body.getReader){ done=true; clearTimeout(to); ntxReport(r); return; }
+        var rd=resp.body.getReader();
+        rd.read().then(function(ch){
+          if(done) return; done=true; clearTimeout(to);
+          var magic="?";
+          try{
+            var u8=new Uint8Array(ch.value.buffer,0,Math.min(4,ch.value.length));
+            magic=String.fromCharCode(u8[0],u8[1],u8[2],u8[3]);
+          }catch(e){ magic="unreadable"; }
+          r.fmagic=magic;
+          try{ rd.cancel(); }catch(e){}
+          ntxReport(r);
+        }).catch(function(){ if(done)return; done=true; clearTimeout(to); r.fmagic="read-fail"; ntxReport(r); });
+      }).catch(function(e){ if(done)return; done=true; clearTimeout(to); r.fstatus="fetch-fail"; ntxReport(r); });
+    }
+    // Stage D: no-cors fetch. Succeeds (opaque response) whenever the
+    // bytes are reachable at all, CORS or no CORS. cors-fail + no-cors-OK
+    // = policy/CORS layer; both failing = the page context has no network.
+    function stageD(){
+      if(typeof fetch!=="function"){ r.nocors="no-fetch"; ntxReport(r); return; }
+      var done=false;
+      var to=setTimeout(function(){
+        if(done) return; done=true;
+        r.nocors="timeout"; ntxReport(r);
+      },8000);
+      fetch(url,{mode:"no-cors",redirect:"follow",credentials:"omit",cache:"no-store"}).then(function(resp){
+        if(done) return; done=true; clearTimeout(to);
+        r.nocors=resp.type||"?"; ntxReport(r);
+      }).catch(function(){ if(done)return; done=true; clearTimeout(to); r.nocors="fail"; ntxReport(r); });
+    }
+    function stageB(){
+      var a=new Audio(); a.crossOrigin="anonymous"; a.preload="auto";
+      var src; try{ src=ctx.createMediaElementSource(a); }catch(e){ r.note="mes-fail"; ntxReport(r); return; }
+      var an=ctx.createAnalyser(); an.fftSize=256; src.connect(an);
+      var zeros=0,checks=0,buf=new Uint8Array(an.fftSize),done=false;
+      var psum=0,psq=0,pn=0;
+      function finish(){ if(done)return; done=true;
+        if(checks===0){ r.taint="unknown"; }
+        else{ r.taint=(zeros===checks)?"tainted":"clean"; }
+        if(pn>0){
+          var m=psum/pn;
+          r.svar=Math.round((psq/pn-m*m)*100)/100;
+        }
+        ntxReport(r); try{a.pause();}catch(e){} try{ctx.close();}catch(e){} }
+      var iv=setInterval(function(){
+        try{
+          if(a.readyState>1&&!a.paused&&a.currentTime>0.2){
+            an.getByteTimeDomainData(buf);
+            var s=0,i; for(i=0;i<buf.length;i++){ s+=Math.abs(buf[i]-128); psum+=buf[i]; psq+=buf[i]*buf[i]; pn++; }
+            checks++; if(s===0){ zeros++; } }
+        }catch(e){}
+        if(checks>=5){ clearInterval(iv); finish(); } },300);
+      setTimeout(function(){ clearInterval(iv); finish(); },8000);
+      a.src=url;
+      var pr2=null; try{ pr2=a.play(); }catch(e){}
+      if(pr2&&pr2.catch){ pr2.catch(function(){ if(!r.note) r.note="needs-gesture"; }); }
+    }
+  }catch(e){ r.note="exception"; try{ntxReport(r);}catch(x){} }
+}
+</script></body></html>
