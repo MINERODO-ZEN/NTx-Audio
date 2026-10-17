@@ -5,8 +5,9 @@
 -- pushes state at 10 Hz; the page owns decoding, filtering and panning.
 --
 -- Limits, stated plainly: page audio bypasses the GMod master volume, and
--- a stream without CORS headers reads as silence to the page graph
--- (tainted inputs fall back to BASS buses, see NTx.Tainted).
+-- a stream without CORS headers reads as silence to the page graph. Tainted
+-- or load-broken inputs stay silent on a capable client: the BASS fallback is
+-- never mixed in underneath WebAudio (NTx.FallbackAllowed in ntx_dsp.lua).
 if not CLIENT then return end
 if NTx_WebAudioLoaded then return end
 NTx_WebAudioLoaded = true
@@ -21,7 +22,7 @@ NTx.Tainted = NTx.Tainted or {}
 NTx.TaintedUrl = NTx.TaintedUrl or {}
 NTx.TaintedNoticed = NTx.TaintedNoticed or {}
 -- Load failures are transient-worthy (server restarts), unlike CORS policy:
--- broken inputs get BASS cover AND a periodic page re-probe.
+-- broken inputs are retried periodically and stay silent until they recover.
 NTx.PageBroken = NTx.PageBroken or {}
 NTx.PageErrors = NTx.PageErrors or {}
 NTx.BrokenRetryAt = NTx.BrokenRetryAt or {}
@@ -43,7 +44,7 @@ local function markPageBroken(pkey, why)
     NTx.TaintedNoticed[ent] = true
     print("[NTx] WebAudio page unusable: " .. why
       .. " Input ent " .. tostring(ent:EntIndex())
-      .. " falls back to a BASS bus (link a fallback bus to its mixer); page retries in 30 s.")
+      .. " stays silent on this client (WebAudio-capable clients do not get BASS cover); page retries in 30 s.")
   end
   -- Tear the dead page down instead of leaving it around: a failed remote
   -- document may be rendering an error page (harmless while hidden, but it
@@ -295,7 +296,7 @@ function NTx.WebAudioOnStatus(pkey, json)
       P.apiWarned = true
       print("[NTx] page " .. tostring(pkey) .. " speaks API v" .. tostring(r.v)
         .. " but this addon wants v" .. tostring(NTx.PAGE_API_VERSION)
-        .. " - re-upload data_static/ntx_live_audio/webaudio.html to your page host.")
+        .. " - re-upload data_static/ntx_audio/webaudio.html to your page host.")
     end
     return
   end
@@ -306,7 +307,7 @@ function NTx.WebAudioOnStatus(pkey, json)
   if r.t == "jserror" then
     print("[NTx] WebAudio page JS error (" .. tostring(pkey) .. "): "
       .. tostring(r.msg) .. " line " .. tostring(tonumber(r.line) or 0)
-      .. " - re-upload webaudio.html from the addon.")
+      .. " - re-upload data_static/ntx_audio/webaudio.html to your page host.")
     markPageBroken(pkey, "page JS error: " .. tostring(r.msg))
     return
   end
@@ -358,7 +359,7 @@ function NTx.WebAudioOnStatus(pkey, json)
         end
         print("[NTx] WebAudio anomaly: audible energy enters (var " .. srcVar .. ") but master silent. "
           .. "Blame: " .. blame .. ". " .. bis
-          .. " Send this line plus ntx_audio_status. Input latched to BASS bus cover meanwhile.")
+          .. " Send this line plus ntx_audio_status. Input latched silent meanwhile.")
       end
     elseif srcVar == 0 and srcMean == 128 then
       if not NTx.Tainted[P.inputEnt] then
@@ -366,8 +367,9 @@ function NTx.WebAudioOnStatus(pkey, json)
         if not NTx.TaintedNoticed[P.inputEnt] then
           NTx.TaintedNoticed[P.inputEnt] = true
           print("[NTx] WebAudio: exact digital silence for 3 s - CORS taint or a dead mount, "
-            .. "indistinguishable here. Decisive test: spawn a fallback bus. Bus plays = page/CORS issue; "
-            .. "bus silent too = the mount emits silence. " .. bis .. " See probe: ntx_audio_probe <url>")
+            .. "indistinguishable here. This client renders WebAudio only, so its fallback "
+            .. "buses stay silent by design: set ntx_backend bass to tell a CORS/page fault "
+            .. "from a mount that emits nothing. " .. bis .. " See probe: ntx_audio_probe <url>")
         end
       end
     else
@@ -395,7 +397,7 @@ function NTx.WebAudioOnStatus(pkey, json)
         print("[NTx] WebAudio page cannot load the stream (media error " .. code
           .. ": 1=aborted 2=network 3=decode 4=unsupported"
           .. "; netstate " .. tostring(r.ns) .. " readystate " .. tostring(r.rs) .. ")"
-          .. " That input moves to BASS bus cover"
+          .. " That input stays silent on this client"
           .. " and the page retries in 30 s. Check the mount/URL first: ntx_audio_probe <url>")
       end
     else
@@ -528,7 +530,7 @@ hook.Add("Think", "NTx.WebAudioThink", function()
     NTx.TaintedUrl[input.ent] = url
     if NTx.Tainted[input.ent] then continue end
     -- Load-broken inputs hold no page (else the 5 s error loop churns
-    -- Icecast slots); BASS bus cover handles them, re-probe above reopens.
+    -- Icecast slots); they stay silent until the re-probe above reopens one.
     if NTx.PageBroken[input.ent] then continue end
     local mrec = mixerRecFor(input.mixer)
     if not mrec then continue end

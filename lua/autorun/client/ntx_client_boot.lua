@@ -29,6 +29,8 @@ concommand.Add("ntx_audio_status", function()
   print("[NTx] backend want=" .. (wantCv and wantCv:GetString() or "?")
     .. " effective=" .. (NTx.EffectiveBackend and NTx.EffectiveBackend() or "?")
     .. " probe=" .. tostring(NTx.WebAudioDetail or "not run")
+    .. " verdict=" .. tostring(NTx.WebAudioVerdict or "pending")
+    .. " fallback=" .. tostring(NTx.FallbackAllowed and NTx.FallbackAllowed() or "?")
     .. " pageRunning=" .. tostring(NTx.WebAudioRunning))
   local g = NTx.Graph or {}
   print(string.format("[NTx] graph: %d inputs %d speakers %d buses %d mixers",
@@ -77,7 +79,7 @@ concommand.Add("ntx_audio_status", function()
   end
   for ent in pairs(NTx.PageBroken or {}) do
     print("[NTx] page-broken input ent " .. tostring(IsValid(ent) and ent:EntIndex() or "gone")
-      .. " (BASS bus cover, page retries every 30 s)")
+      .. " (silent on this client, page retries every 30 s)")
   end
   for dgkey in pairs(NTx.Downgraded or {}) do
     print("[NTx] downgraded to 2D: " .. tostring(dgkey))

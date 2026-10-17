@@ -13,15 +13,15 @@ NTx_EnginePanelLoaded = true
 -- name, kind, help, min, max, decimals, choices
 --   kind: "check" | "combo" | "slider"
 local ENGINE = {
-  { "ntx_backend", "combo", "Backend (auto = WebAudio when capable)", nil, nil, nil,
+  { "ntx_backend", "combo", "Backend", nil, nil, nil,
     { "auto", "webaudio", "bass" } },
   { "ntx_max_pages", "slider", "Max WebAudio pages (one per input)", 1, 8, 0 },
   { "ntx_limiter", "check", "Safety limiter on the WebAudio master" },
   { "ntx_limiter_db", "slider", "Limiter threshold (dBFS)", -12, 0, 1 },
-  { "ntx_headroom_db", "slider", "Mix headroom (dB, lower = cone survives the limiter)", -12, 0, 1 },
+  { "ntx_headroom_db", "slider", "Mix headroom (dB)", -12, 0, 1 },
   { "ntx_push_hz", "slider", "State push rate (Hz)", 5, 60, 0 },
   { "ntx_motion_smooth", "slider", "Motion smoothing (ms)", 0, 300, 0 },
-  { "ntx_motion_max_rate", "slider", "Max motion speed (units/s, 0 = uncapped)", 0, 8000, 0 },
+  { "ntx_motion_max_rate", "slider", "Max motion speed (units/s)", 0, 8000, 0 },
   { "ntx_cardioid_ms", "slider", "Cardioid rear-box delay (ms)", 0, 20, 1 },
   { "ntx_endfire_m", "slider", "Endfire cabinet spacing (m)", 0, 5, 2 },
   { "ntx_bass_smooth", "slider", "BASS 3D tap smoothing (ms)", 0, 300, 0 },
@@ -41,8 +41,6 @@ local SERVER_OWNED = {
   ntx_update_hz = "Graph rebroadcast cap (Hz)",
   ntx_mixer_admin_only = "Mixer edits limited to admins",
 }
-
-local frame
 
 local function cvOf(name)
   return GetConVar(name)
@@ -82,8 +80,14 @@ local function buildContents(panel)
   local warn = panel:Help(
     "WARNING: engine internals. Only change these if you know what you are doing - " ..
     "wrong values can silence or break all NTx audio. Use \"Restore engine defaults\" below to undo.")
-  if IsValid(warn) and warn.SetTextColor then
-    warn:SetTextColor(Color(200, 60, 60))
+  if IsValid(warn) then
+    if warn.SetTextColor then warn:SetTextColor(Color(200, 60, 60)) end
+    -- Breathing room under the warning: Help's stock 8 px bottom margin puts
+    -- the backend/probe line right against it. The label sits inside a
+    -- DSizeToContents wrapper, so that wrapper has to re-measure too.
+    warn:DockMargin(8, 0, 8, 20)
+    local wParent = warn:GetParent()
+    if IsValid(wParent) then wParent:InvalidateLayout(true) end
   end
   panel:ControlHelp("Active backend: " .. backend
     .. "   |   probe: " .. tostring(NTx.WebAudioDetail or "not run"))
@@ -113,7 +117,6 @@ local function buildContents(panel)
   panel:Button("Print audio status", "ntx_audio_status")
   panel:Button("Resume suspended browser audio", "ntx_audio_resume")
   panel:Button("Restore engine defaults", "ntx_engine_reset")
-  panel:Button("Open standalone panel", "ntx_engine_options")
 end
 
 local function build(panel)
@@ -129,28 +132,13 @@ local function build(panel)
   end
 end
 
-local function openPanel()
-  if IsValid(frame) then frame:Close() end
-  frame = vgui.Create("DFrame")
-  frame:SetTitle("NTx audio engine")
-  frame:SetSize(math.min(560, ScrW() * 0.7), math.min(620, ScrH() * 0.8))
-  frame:Center()
-  frame:MakePopup()
-
-  -- Same DForm the spawnmenu hands us, so this window is fully editable
-  -- rather than a read-only mirror.
-  local form = vgui.Create("DForm", frame)
-  form:Dock(FILL)
-  build(form)
-end
-
+-- The engine options live in the spawnmenu Utilities tab only: no standalone
+-- window, no console command. The option name is just a spawnmenu identity.
 hook.Add("PopulateToolMenu", "NTx.EngineUtilities", function()
-  spawnmenu.AddToolMenuOption("Utilities", "NTx Audio", "ntx_engine_options",
-    "NTx audio engine (backend, limiter, motion, occlusion)",
+  spawnmenu.AddToolMenuOption("Utilities", "NTx Audio", "ntx_engine",
+    "NTx audio engine",
     "", "", build, {})
 end)
-
-concommand.Add("ntx_engine_options", function() openPanel() end)
 
 -- Restore every client-owned engine ConVar on this page to its default.
 -- Server-owned values are reported, not written, so they are skipped.

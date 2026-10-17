@@ -18,7 +18,7 @@ CreateConVar("ntx_update_hz", "10", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Graph reb
 -- (a malicious value would fetch remote script into a privileged page).
 -- FCVAR_REPLICATED syncs it to clients; only the server/console can set it:
 --   ntx_page_base "https://host/path/"
--- The host must serve ntx_live_audio/webaudio.html and probe.html.
+-- The host must serve ntx_audio/webaudio.html and probe.html.
 CreateConVar("ntx_page_base", "https://xta.xenonetwork.moe/dsp/",
   { FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY },
   "Base URL for NTx mixer/probe pages (server-controlled; trailing slash added if missing)")
@@ -36,16 +36,6 @@ function NTx.CollectGraph()
     if IsValid(e) then
       g.inputs[#g.inputs + 1] = {
         ent = e, class = "ntx_input_url",
-        url = e:GetStreamUrl(),
-        vol = e:GetInputVolume(), maxd = e:GetMaxDist(),
-        mixer = IsValid(e:GetMixer()) and e:GetMixer() or nil,
-      }
-    end
-  end
-  for _, e in ipairs(ents.FindByClass("ntx_input_mic")) do
-    if IsValid(e) then
-      g.inputs[#g.inputs + 1] = {
-        ent = e, class = "ntx_input_mic",
         url = e:GetStreamUrl(),
         vol = e:GetInputVolume(), maxd = e:GetMaxDist(),
         mixer = IsValid(e:GetMixer()) and e:GetMixer() or nil,
@@ -204,7 +194,7 @@ function NTx.LinkToMixer(ply, target, mixer)
   if not IsValid(target) or not IsValid(mixer) or mixer:GetClass() ~= "ntx_mixer" then return false end
   if not canEdit(ply, mixer) then return false end
   target:SetMixer(mixer)
-  if target:GetClass() == "ntx_input_url" or target:GetClass() == "ntx_input_mic" then
+  if target:GetClass() == "ntx_input_url" then
     mixer:EnsureChannel(target)
   end
   NTx.BroadcastGraph()
@@ -257,7 +247,7 @@ end)
 hook.Add("EntityRemoved", "NTx.GraphDirty", function(ent)
   if ent:GetClass() == "ntx_mixer" or ent:GetClass() == "ntx_speaker"
     or ent:GetClass() == "ntx_fallback_bus"
-    or ent:GetClass() == "ntx_input_url" or ent:GetClass() == "ntx_input_mic" then
+    or ent:GetClass() == "ntx_input_url" then
     NTx.BroadcastGraph()
   end
 end, -1)

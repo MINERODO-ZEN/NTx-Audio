@@ -26,9 +26,6 @@ function ENT:OnRemove()
   for _, e in ipairs(ents.FindByClass("ntx_input_url")) do
     if IsValid(e) and e:GetMixer() == self then e:SetMixer(NULL) end
   end
-  for _, e in ipairs(ents.FindByClass("ntx_input_mic")) do
-    if IsValid(e) and e:GetMixer() == self then e:SetMixer(NULL) end
-  end
   for _, e in ipairs(ents.FindByClass("ntx_fallback_bus")) do
     if IsValid(e) and e:GetMixer() == self then e:SetMixer(NULL) end
   end

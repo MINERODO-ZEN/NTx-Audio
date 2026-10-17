@@ -6,6 +6,26 @@ NTx_MixerUILoaded = true
 
 local openMixer = nil
 
+-- Derma's label ink is inherited from the active skin, which on this dark
+-- mixer frame left every caption sitting almost on top of the background.
+-- Text is coloured explicitly here so contrast never depends on the skin.
+local COL_TEXT = Color(240, 240, 240)
+local COL_DIM = Color(200, 200, 200)
+
+local function label(parent, txt, col)
+  local lbl = vgui.Create("DLabel", parent)
+  lbl:SetText(txt)
+  lbl:SetTextColor(col or COL_TEXT)
+  return lbl
+end
+
+local function checkLabel(parent, txt)
+  local chk = vgui.Create("DCheckBoxLabel", parent)
+  chk:SetText(txt)
+  chk:SetTextColor(COL_TEXT)
+  return chk
+end
+
 local function sendBus(mixer, which, fader, muted)
   net.Start("NTx.MixerEdit")
   net.WriteEntity(mixer)
@@ -16,14 +36,14 @@ local function sendBus(mixer, which, fader, muted)
   net.SendToServer()
 end
 
-local function sendChannel(mixer, input, fader, muted, label)
+local function sendChannel(mixer, input, fader, muted, text)
   net.Start("NTx.MixerEdit")
   net.WriteEntity(mixer)
   net.WriteString("channel")
   net.WriteEntity(input)
   net.WriteFloat(NTx.ClampFader(fader))
   net.WriteBool(muted)
-  net.WriteString(string.sub(label or "", 1, 24))
+  net.WriteString(string.sub(text or "", 1, 24))
   net.SendToServer()
 end
 
@@ -52,8 +72,8 @@ local function busRow(parent, name, which, mixer)
   row:Dock(TOP)
   row:SetTall(36)
   row:DockMargin(4, 4, 4, 0)
-  local lbl = vgui.Create("DLabel", row)
-  lbl:SetText(name)
+  local lbl = label(row, name)
+  lbl:SetFont("DermaDefaultBold")
   lbl:SetWide(70)
   lbl:Dock(LEFT)
   local slider = vgui.Create("DNumSlider", row)
@@ -61,14 +81,12 @@ local function busRow(parent, name, which, mixer)
   slider:SetMinMax(0, 2)
   slider:SetDecimals(2)
   slider:SetValue(fader)
-  local mute = vgui.Create("DCheckBoxLabel", row)
-  mute:SetText("Mute")
+  local mute = checkLabel(row, "Mute")
   mute:SetValue(muted)
   mute:Dock(RIGHT)
-  local db = vgui.Create("DLabel", row)
+  local db = label(row, dbLabel(fader), COL_DIM)
   db:SetWide(62)
   db:Dock(RIGHT)
-  db:SetText(dbLabel(fader))
   slider.OnValueChanged = function(_, v)
     db:SetText(dbLabel(v))
     sendBus(mixer, which, v, mute:GetChecked())
@@ -95,19 +113,24 @@ function NTx.OpenMixerUI(mixer)
   busRow(scroll, "MID bus", "mid", mixer)
   busRow(scroll, "SUB bus", "sub", mixer)
 
-  local help = vgui.Create("DLabel", scroll)
+  local help = label(scroll,
+    "Channels follow linked inputs. Each input opens one stream at its mixer's fallback bus.", COL_DIM)
   help:Dock(TOP)
-  help:SetText("Channels follow linked inputs. Each input opens one stream at its mixer's fallback bus.")
   help:SetWrap(true)
   help:SetTall(30)
 
   local st = vgui.Create("DLabel", scroll)
   st:Dock(TOP)
+  st:SetTextColor(COL_DIM)
   local backend = NTx.EffectiveBackend and NTx.EffectiveBackend() or "bass"
   if backend == "webaudio" then
     st:SetText("Backend: WebAudio - speakers live, fallback buses silent.")
-  else
+  elseif NTx.FallbackAllowed and NTx.FallbackAllowed() then
     st:SetText("Backend: BASS fallback - fallback buses live, speakers silent.")
+  else
+    -- WebAudio selected but the capability probe has not answered yet: the
+    -- buses are muted so a capable client never hears both backends.
+    st:SetText("Backend: waiting on the WebAudio capability probe - fallback buses muted until it answers.")
   end
   st:SetWrap(true)
   st:SetTall(30)
@@ -122,12 +145,12 @@ function NTx.OpenMixerUI(mixer)
       top:Dock(TOP)
       top:SetTall(28)
       top:SetPaintBackground(false)
-      local name = vgui.Create("DLabel", top)
-      name:SetText((ch.label ~= "" and ch.label or tostring(ch.input and ch.input:EntIndex() or "?")) .. " [" .. (ch.input and ch.input:GetClass() or "?") .. "]")
+      local name = label(top,
+        (ch.label ~= "" and ch.label or tostring(ch.input and ch.input:EntIndex() or "?")) .. " [" .. (ch.input and ch.input:GetClass() or "?") .. "]")
+      name:SetFont("DermaDefaultBold")
       name:Dock(LEFT)
       name:SetWide(260)
-      local mute = vgui.Create("DCheckBoxLabel", top)
-      mute:SetText("Mute")
+      local mute = checkLabel(top, "Mute")
       mute:SetValue(ch.muted)
       mute:Dock(RIGHT)
       local bot = vgui.Create("DPanel", row)
@@ -140,12 +163,12 @@ function NTx.OpenMixerUI(mixer)
       slider:SetValue(ch.fader)
       local entry = vgui.Create("DTextEntry", bot)
       entry:Dock(BOTTOM)
+      entry:SetTextColor(COL_TEXT)
       entry:SetValue(ch.label or "")
       entry:SetPlaceholderText("Label")
-      local db = vgui.Create("DLabel", bot)
+      local db = label(bot, dbLabel(ch.fader), COL_DIM)
       db:SetWide(62)
       db:Dock(RIGHT)
-      db:SetText(dbLabel(ch.fader))
       local apply = function()
         db:SetText(dbLabel(slider:GetValue()))
         sendChannel(mixer, ch.input, slider:GetValue(), mute:GetChecked(), entry:GetValue())

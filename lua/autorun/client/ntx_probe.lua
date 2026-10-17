@@ -106,6 +106,9 @@ local function ensurePanel()
   timer.Simple(12, function()
     if IsValid(panel) and not probeReady then
       print("[NTx] probe: page never signalled ready (page host unreachable or ntx_page_base truncated?). WebAudio treated as unavailable.")
+      -- Same reasoning as an unreadable verdict: a page that never loaded
+      -- cannot vouch for WebAudio, so the fallback is allowed to run.
+      NTx.WebAudioVerdict = "fail"
       -- Destroy it: a dead remote document can render an error page, and
       -- there is nothing left to gain from keeping it around.
       panel:Remove()
@@ -121,9 +124,13 @@ onResult = function(json)
   pcall(function() r = util.JSONToTable(tostring(json or "")) end)
   if not istable(r) then
     print("[NTx] probe: unreadable result")
+    -- Unanswered means unanswered: let the fallback in rather than mute a rig
+    -- that may well be WebAudio-incapable.
+    NTx.WebAudioVerdict = "fail"
     return
   end
   NTx.WebAudioOK = (r.api == "full")
+  NTx.WebAudioVerdict = NTx.WebAudioOK and "pass" or "fail"
   -- A "clean" verdict on a near-zero-variance signal blesses dead air:
   -- flag it so nobody trusts it.
   if r.taint == "clean" and tonumber(r.svar) ~= nil and tonumber(r.svar) < 2 then
@@ -158,6 +165,10 @@ end
 function NTx.RunProbe(url)
   local p = ensurePanel()
   NTx.LastProbeUrl = url
+  -- Opens the capability question again: the fallback stays muted until this
+  -- probe answers (or its watchdog gives up).
+  NTx.ProbeStartedAt = CurTime()
+  NTx.WebAudioVerdict = "pending"
   if probeReady and IsValid(p) then
     local arg = url and string.format("%q", tostring(url)) or "null"
     p:Call("runProbe(" .. arg .. ")")
@@ -195,6 +206,9 @@ cvars.AddChangeCallback("ntx_page_base", function()
   NTx.WebAudioOK = false
   NTx.WebAudioDetail = "not run"
   NTx.WebAudioRunning = false
+  -- Everything is about to be retested against the new host: close the
+  -- capability question again instead of leaving a stale verdict in place.
+  NTx.WebAudioVerdict = "pending"
   if NTx.WebAudio and NTx.WebAudio.Pages then
     for k, P in pairs(NTx.WebAudio.Pages) do
       if P and IsValid(P.panel) then P.panel:Remove() end

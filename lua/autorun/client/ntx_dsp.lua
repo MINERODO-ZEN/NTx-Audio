@@ -40,6 +40,12 @@ NTx.CvConeDebug = CreateClientConVar("ntx_cone_debug", "0", true, false,
 CreateClientConVar("ntx_headroom_db", "-6", true, false,
   "Audibility-normaliser target in dBFS (-12..0): keep the mix under the limiter so cone ratios survive")
 NTx.WebAudioOK = NTx.WebAudioOK or false
+-- Probe verdict: "pending" (capability unknown), "pass", "fail". ntx_probe.lua
+-- owns every transition; this file only reads it.
+NTx.WebAudioVerdict = NTx.WebAudioVerdict or "pending"
+-- When the open capability question started. Seeded at load so a client whose
+-- probe never even starts still leaves the silent window (see PROBE_GRACE).
+NTx.ProbeStartedAt = NTx.ProbeStartedAt or CurTime()
 NTx.Tainted = NTx.Tainted or {}
 NTx.MuteState = NTx.MuteState or {}
 NTx.StationAttempts = NTx.StationAttempts or {}
@@ -51,6 +57,37 @@ function NTx.EffectiveBackend()
     return "webaudio"
   end
   return "bass"
+end
+
+-- Longest the fallback stays muted while the probe is still unanswered.
+-- Comfortably past the probe's own 12 s watchdog, so the mute cannot outlast
+-- a probe that is merely slow.
+NTx.PROBE_GRACE = 25
+
+-- The BASS fallback may only make sound when WebAudio is genuinely out of
+-- reach for THIS client:
+--   - WebAudio live            -> never (this is the whole point: no capable
+--                                 player hears both backends at once)
+--   - probe says unavailable   -> yes
+--   - probe still unanswered    -> no. A capable client would otherwise hear
+--                                 the fallback for the first seconds after
+--                                 joining, before the probe reports in.
+--   - ntx_backend bass forced   -> yes, the operator asked for it.
+-- Bounded by PROBE_GRACE: a probe that never answers flips the verdict to
+-- "fail" rather than muting the rig forever. That grace also covers a probe
+-- that passed while the WebAudio module itself failed to load, since then
+-- EffectiveBackend stays "bass" with nothing to play.
+function NTx.FallbackAllowed()
+  if NTx.EffectiveBackend() ~= "bass" then return false end
+  if string.lower(cvBackend:GetString() or "auto") == "bass" then return true end
+  if NTx.WebAudioVerdict == "fail" then return true end
+  if (CurTime() - (NTx.ProbeStartedAt or CurTime())) >= NTx.PROBE_GRACE then
+    NTx.WebAudioVerdict = "fail"
+    print("[NTx] WebAudio capability still unknown after " .. NTx.PROBE_GRACE
+      .. " s (probe never answered); treating WebAudio as unavailable and enabling the BASS fallback.")
+    return true
+  end
+  return false
 end
 
 local function mixerRecFor(mixerEnt)
@@ -184,6 +221,7 @@ end)
 
 local nextTick = 0
 local lastBackend = nil
+local lastFallback = nil
 
 hook.Add("Think", "NTx.DspThink", function()
   if CurTime() < nextTick then return end
@@ -195,6 +233,21 @@ hook.Add("Think", "NTx.DspThink", function()
     print("[NTx] effective backend: " .. backend
       .. " (probe: " .. tostring(NTx.WebAudioDetail or "not run") .. ")")
   end
+  local allowBass = NTx.FallbackAllowed()
+  -- The fallback gate is reported apart from the backend line: "this client
+  -- is capable, so the BASS buses are deliberately silent" is the answer to
+  -- the first question when a capable player hears nothing at all.
+  if allowBass ~= lastFallback then
+    lastFallback = allowBass
+    if allowBass then
+      print("[NTx] BASS fallback ACTIVE: WebAudio unavailable on this client (probe: "
+        .. tostring(NTx.WebAudioDetail or "not run") .. ").")
+    else
+      print("[NTx] BASS fallback SILENT: "
+        .. (backend == "webaudio" and "WebAudio is live on this client - fallback buses are muted by design."
+          or ("capability probe still unanswered (probe: " .. tostring(NTx.WebAudioDetail or "not run") .. ").")))
+    end
+  end
   local maxCv = GetConVar("ntx_max_channels")
   local maxSrc = maxCv and maxCv:GetInt() or 16
   local seen = {}
@@ -205,10 +258,12 @@ hook.Add("Think", "NTx.DspThink", function()
     return count <= math.Clamp(maxSrc, 1, NTx.MAX_SOURCES)
   end
 
-  -- Under WebAudio, BASS only covers CORS-tainted inputs the page graph
-  -- cannot touch; each of those still gets exactly one tap at a bus.
-  -- Under BASS, every input renders here and speakers stay dark.
-  local taintedOnly = NTx.EffectiveBackend() ~= "bass"
+  -- A client that can run WebAudio NEVER hears this renderer. When WebAudio
+  -- is live - or while the capability probe has not answered yet - no fallback
+  -- tap is opened at all, including the old CORS-tainted / page-broken cover:
+  -- those inputs go silent instead of doubling up with the page graph.
+  -- Under real BASS, every input renders here and speakers stay dark.
+  local inputs = allowBass and NTx.Graph.inputs or {}
   local now = CurTime()
   local lp = LocalPlayer():GetPos()
   local muteDist = cvMuteDist:GetInt() or 5000
@@ -216,10 +271,8 @@ hook.Add("Think", "NTx.DspThink", function()
   local wallCache = {}
   local bassEnergy = 0
   local pendingTaps = {}
-  for iIdx, input in ipairs(NTx.Graph.inputs) do
+  for iIdx, input in ipairs(inputs) do
     if not IsValid(input.mixer) then continue end
-    if taintedOnly and not ((NTx.Tainted and NTx.Tainted[input.ent])
-      or (NTx.PageBroken and NTx.PageBroken[input.ent])) then continue end
     local mrec = mixerRecFor(input.mixer)
     if not mrec then continue end
     local bus = nearestFallback(input.mixer, lp)
