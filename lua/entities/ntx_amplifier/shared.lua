@@ -26,14 +26,17 @@ function ENT:SetupDataTables()
   -- sensitivity. Trim changes gain without changing what the amp can deliver.
   self:NetworkVar("Float", 4, "Trim", { KeyName = "amptrim", Edit = { type = "Float", min = -40, max = 24, step = 0.5, order = 7, category = "NTx Amp" } })
   self:NetworkVar("Float", 5, "Ilime", { KeyName = "ilime", Edit = { type = "Float", min = 1, max = 60, step = 0.5, order = 8, category = "NTx Amp" } })
-  self:NetworkVar("Int", 1, "Mode", { KeyName = "ampmode", Edit = { type = "Combo", values = ENT.MODE, order = 9, category = "NTx Amp" } })
+  -- self.MODE, not ENT.MODE: the global ENT only exists while the file is being
+  -- loaded. SetupDataTables runs later, at spawn, when ENT is gone - and an
+  -- error here silently aborts every NetworkVar declared after it.
+  self:NetworkVar("Int", 1, "Mode", { KeyName = "ampmode", Edit = { type = "Combo", values = self.MODE, order = 9, category = "NTx Amp" } })
   -- Constant-voltage tap for installed-sound runs (CDi only). 0 = low-Z.
   self:NetworkVar("Int", 2, "HizVolt", { KeyName = "hizv", Edit = { type = "Combo", values = { ["low-Z"] = "0", ["70 V"] = "70", ["100 V"] = "100" }, order = 10, category = "NTx Amp" } })
   -- One bit per channel: set = SUB bus, clear = MID bus. The amp reads the
   -- matching mixer bus, so the meters and the heat are honest about what the
   -- channel is actually driving.
   self:NetworkVar("Int", 3, "BusMask", { KeyName = "busmask", Edit = { type = "Float", min = 0, max = 255, step = 1, order = 11, category = "NTx Amp" } })
-  self:NetworkVar("Int", 4, "Meters", { KeyName = "ampmeters", Edit = { type = "Combo", values = ENT.METERS, order = 12, category = "NTx Amp" } })
+  self:NetworkVar("Int", 4, "Meters", { KeyName = "ampmeters", Edit = { type = "Combo", values = self.METERS, order = 12, category = "NTx Amp" } })
 
   -- Behaviour that differs between one amplifier and the next, each on its own
   -- switch rather than a single "realistic" flag: a car amplifier has no
