@@ -282,12 +282,14 @@ local RED = Color(240, 70, 60)
 local BLUE = Color(70, 150, 245)
 local DIM = Color(120, 122, 126)
 
-local function led(x, y, col, on, radius)
+local function led(x, y, col, alpha, radius)
   radius = radius or LED_R
   surface.SetDrawColor(OFF.r, OFF.g, OFF.b)
   surface.DrawRect(x - radius, y - radius, radius * 2, radius * 2)
-  if on then
-    surface.SetDrawColor(col.r, col.g, col.b, on.alpha or 255)
+  -- alpha is a number (0 = dark), not a Color: every call site passes the
+  -- brightness directly. 0 is truthy in Lua, so test it as a number.
+  if tonumber(alpha) and alpha > 0 then
+    surface.SetDrawColor(col.r, col.g, col.b, alpha)
     surface.DrawRect(x - radius + 1.5, y - radius + 1.5, radius * 2 - 3, radius * 2 - 3)
   end
 end
