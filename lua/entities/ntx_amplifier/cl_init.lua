@@ -8,6 +8,14 @@ include("shared.lua")
 -- Wire ports exist in both realms; see shared.lua's CreateWirePorts.
 function ENT:Initialize()
   self:CreateWirePorts()
+
+  -- Redo the ports once the profile has actually arrived. GMod does not fire
+  -- NetworkVarNotify clientside for changes made right after spawn (wiki issue
+  -- #324), which is exactly when the server stamps the profile - so at this
+  -- instant Channels is still its default and the port list would be wrong.
+  timer.Simple(1, function()
+    if IsValid(self) then self:CreateWirePorts() end
+  end)
 end
 
 function ENT:Draw()
