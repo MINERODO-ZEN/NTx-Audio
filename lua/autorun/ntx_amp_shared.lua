@@ -634,9 +634,56 @@ function NTx.OpenEntityGui(ply, ent)
   return true
 end
 
--- The shift state of a tool click. Checked server-side because LeftClick runs
--- there, and read off the owning player rather than the global (the realm
--- local "KeyDown" would answer for the server's own input).
+-- The shift state of a tool click.
+--
+-- This has to be answered by the CLIENT: Player:KeyDown is explicitly not
+-- networked ("only the local client can see the keys they are pressing"), and
+-- TOOL:LeftClick runs on the server, where every KeyDown reads false. So the
+-- client mirrors its own modifier keys into a networked int, and the server
+-- reads that. An int bitmask rather than one bool per key, so a future modifier
+-- costs nothing.
+local function modMask()
+  if input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT) then return 1 end
+  return 0
+end
+
+if CLIENT then
+  -- Every frame, so the value the server reads is the value held at the moment
+  -- of the click rather than whenever the last net message happened to land.
+  hook.Add("Think", "NTx.ModWatch", function()
+    local ply = LocalPlayer()
+    if IsValid(ply) then ply:SetNWInt("NtxMods", modMask()) end
+  end)
+end
+
 function NTx.ToolShift(ply)
-  return IsValid(ply) and (ply:KeyDown(KEY_LSHIFT) or ply:KeyDown(KEY_RSHIFT))
+  if not IsValid(ply) then return false end
+  -- Server side: the client's mirrored bitmask. The KeyDown fallback is for the
+  -- singleplayer/listen case where both realms answer for the same player.
+  local mask = ply:GetNWInt("NtxMods", 0)
+  if mask > 0 then return true end
+  return ply:KeyDown(KEY_LSHIFT) or ply:KeyDown(KEY_RSHIFT)
+end
+
+-- Build stamp. Tool panels and entity panels are two different code paths that
+-- both have to be current before anything can be tested; printing the stamp on
+-- load makes "the game is still running yesterday's Lua" a one-glance answer
+-- instead of a guessing game.
+NTx.BUILD = "7deb8bb+modwatch"
+
+if SERVER then
+  util.AddNetworkString("NTx.Hello")
+  hook.Add("PlayerInitialSpawn", "NTx.Hello", function(ply)
+    timer.Simple(1, function()
+      if not IsValid(ply) then return end
+      net.Start("NTx.Hello")
+      net.WriteString(NTx.BUILD)
+      net.Send(ply)
+    end)
+  end)
+else
+  net.Receive("NTx.Hello", function()
+    print("[NTx] client build " .. tostring(net.ReadString())
+      .. " (shift-click opens any NTx entity panel)")
+  end)
 end
