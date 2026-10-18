@@ -106,21 +106,16 @@ end
 local function dropdown(panel, label, convar, choices)
   local right = panel:ComboBox(label, convar)
   right:SetTall(26)
-  local index = {}
-  for i, ch in ipairs(choices) do
-    right:AddChoice(ch[1], ch[2])
-    index[tostring(ch[2])] = i
+  for _, ch in ipairs(choices) do
+    NTx.ComboAdd(right, ch[1], ch[2])
   end
   local cvar = GetConVar(convar)
-  local current = cvar and cvar:GetString() or ""
-  -- DComboBox picks by INDEX (ChooseOptionID), and ChooseOption - which it calls
-  -- internally - takes the option text as its first argument, so preselecting
-  -- with a raw value is what errors out. Hence the map; the
-  -- preselect fires OnSelect, which is harmless because DComboBox has a no-op
-  -- one until the real handler is installed below.
-  right:ChooseOptionID(index[current] or 1)
-  right.OnSelect = function(_, _, data)
-    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
+  -- Preselected by value through the text map, not by an index accumulated
+  -- while adding: AddChoice sorts, so that index is not the option position.
+  NTx.ComboPick(right, cvar and cvar:GetString() or "")
+  right.OnSelect = function()
+    local v = tostring(NTx.ComboGet(right) or "")
+    if cvar and cvar:GetString() ~= v then cvar:SetString(v) end
   end
   return right
 end
@@ -133,15 +128,14 @@ local function modelPicker(panel, convar)
   combo:Dock(TOP)
   combo:DockMargin(4, 0, 4, 0)
   combo:SetTall(26)
-  local index = {}
-  for i, id in ipairs(NTx.AmpProfileIds()) do
-    combo:AddChoice(NTx.AmpProfile(id).name, id)
-    index[id] = i
+  for _, id in ipairs(NTx.AmpProfileIds()) do
+    NTx.ComboAdd(combo, NTx.AmpProfile(id).name, id)
   end
   local cvar = GetConVar(convar)
-  combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
-  combo.OnSelect = function(_, _, data)
-    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
+  NTx.ComboPick(combo, cvar and cvar:GetString() or "")
+  combo.OnSelect = function()
+    local v = tostring(NTx.ComboGet(combo) or "")
+    if cvar and cvar:GetString() ~= v then cvar:SetString(v) end
   end
   return combo
 end

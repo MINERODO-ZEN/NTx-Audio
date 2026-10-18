@@ -121,42 +121,36 @@ end
 local function dropdown(panel, label, convar, choices)
   local right = panel:ComboBox(label, convar)
   right:SetTall(26)
-  local index = {}
-  for i, ch in ipairs(choices) do
-    right:AddChoice(ch[1], ch[2])
-    index[tostring(ch[2])] = i
+  for _, ch in ipairs(choices) do
+    NTx.ComboAdd(right, ch[1], ch[2])
   end
   local cvar = GetConVar(convar)
-  local current = cvar and cvar:GetString() or ""
-  -- DComboBox picks by INDEX (ChooseOptionID), and ChooseOption - which it calls
-  -- internally - takes the option text as its first argument, so preselecting
-  -- with a raw value is what errors out. Hence the map; the
-  -- preselect fires OnSelect, which is harmless because DComboBox has a no-op
-  -- one until the real handler is installed below.
-  right:ChooseOptionID(index[current] or 1)
-  right.OnSelect = function(_, _, data)
-    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
+  -- Preselected by value through the text map rather than by an index built
+  -- while adding: AddChoice sorts, so that index is not the option position.
+  NTx.ComboPick(right, cvar and cvar:GetString() or "")
+  right.OnSelect = function()
+    local v = tostring(NTx.ComboGet(right) or "")
+    if cvar and cvar:GetString() ~= v then cvar:SetString(v) end
   end
   return right
 end
 
 -- The profile picker is built by hand because the list is dynamic: saved
 -- profiles arrive over the network at any time, so a preset picker has nothing
--- to show. Same value -> index rule as the dropdown above.
+-- to show. Same text-keyed value rule as the dropdown above.
 local function profilePicker(panel, list, convar, mark)
   local combo = vgui.Create("DComboBox", panel)
   combo:Dock(TOP)
   combo:DockMargin(4, 0, 4, 0)
   combo:SetTall(26)
-  local index = {}
-  for i, p in ipairs(list) do
-    combo:AddChoice(p.name .. (p.saved and mark or ""), p.id)
-    index[p.id] = i
+  for _, p in ipairs(list) do
+    NTx.ComboAdd(combo, p.name .. (p.saved and mark or ""), p.id)
   end
   local cvar = GetConVar(convar)
-  combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
-  combo.OnSelect = function(_, _, data)
-    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
+  NTx.ComboPick(combo, cvar and cvar:GetString() or "")
+  combo.OnSelect = function()
+    local v = tostring(NTx.ComboGet(combo) or "")
+    if cvar and cvar:GetString() ~= v then cvar:SetString(v) end
   end
   return combo
 end
@@ -195,7 +189,7 @@ function TOOL.BuildCPanel(panel)
     net.WriteEntity(spk)
     -- Whatever the combo currently points at, with the convar as the fallback:
     -- the button has to work even if the combo never got a selection.
-    net.WriteString(tostring(spkCombo:GetOptionData(spkCombo:GetSelectedID())
+    net.WriteString(tostring(NTx.ComboGet(spkCombo)
       or GetConVarString(cv("spkprofile"))))
     net.SendToServer()
   end

@@ -747,3 +747,60 @@ else
       .. " (shift-click opens any NTx entity panel)")
   end)
 end
+
+-- ------------------------------------------------------- combo boxes
+--
+-- GMod's DComboBox is only reliable about one thing: GetSelectedID. Two other
+-- things this addon depends on do not hold:
+--
+--   - AddChoice calls SortItems, so insertion order is NOT the option index.
+--     "Bridge-mono" sorts ahead of "Dual (stereo)", so an index accumulated
+--     while adding pointed at the wrong choice, and mode/tap preselection
+--     opened on the wrong entry.
+--   - the data argument OnSelect passes did not carry the value that was added.
+--     A dropdown that compared it always compared false and silently took the
+--     wrong branch - which is why a MID/SUB choice always landed on MID.
+--
+-- So values are stored against the option TEXT, which this addon supplies and
+-- controls, and which is unique within any one combo. Both directions go
+-- through the text and neither depends on ordering or on the payload.
+
+function NTx.ComboAdd(combo, text, data)
+  combo:AddChoice(text, data)
+  combo._ntxData = combo._ntxData or {}
+  combo._ntxLabel = combo._ntxLabel or {}
+  combo._ntxData[tostring(text)] = data
+  combo._ntxLabel[tostring(data)] = tostring(text)
+end
+
+function NTx.ComboText(combo)
+  local id = combo:GetSelectedID()
+  if not id then return nil end
+  return combo:GetOptionText(id)
+end
+
+-- The value the selected option was added with, or nil.
+function NTx.ComboGet(combo)
+  local txt = NTx.ComboText(combo)
+  if txt ~= nil and combo._ntxData then
+    local v = combo._ntxData[tostring(txt)]
+    if v ~= nil then return v end
+  end
+  local id = combo:GetSelectedID()
+  return (id and combo:GetOptionData(id)) or nil
+end
+
+-- Select the option carrying this value, by text rather than by index.
+function NTx.ComboPick(combo, data)
+  local want = combo._ntxLabel and combo._ntxLabel[tostring(data)]
+  if not want then return false end
+  for id = 1, 64 do
+    local t = combo:GetOptionText(id)
+    if not t then return false end
+    if t == want then
+      combo:ChooseOptionID(id)
+      return true
+    end
+  end
+  return false
+end

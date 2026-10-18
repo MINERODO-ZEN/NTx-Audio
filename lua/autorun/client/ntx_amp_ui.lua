@@ -21,26 +21,9 @@ local openPanel = nil
 -- GLua's DComboBox has no Select(): the wiki's ChooseOptionID takes the option
 -- index, and every combo here identifies its current value by choice data (a
 -- profile id, a bus flag, an entity), so the data -> index map is kept by hand.
-local function comboAdd(combo, text, data)
-  combo:AddChoice(text, data)
-  combo._dataIndex = combo._dataIndex or {}
-  combo._dataIndex[tostring(data)] = table.Count(combo._dataIndex) + 1
-end
-
-local function comboPick(combo, data)
-  local idx = combo._dataIndex and combo._dataIndex[tostring(data)]
-  if idx then combo:ChooseOptionID(idx) end
-end
-
--- GetSelectedID returns a 1-based INDEX, not the value the choice was added
--- with. Those two are only the same by accident when the data happens to run
--- 1,2,3 - so reading a combo for its value has to go through GetOptionData.
--- Sending the index as the value inverts MID/SUB and shifts every mode by one.
-local function comboGet(combo)
-  local id = combo:GetSelectedID()
-  if not id then return nil end
-  return combo:GetOptionData(id)
-end
+-- Combo handling lives in ntx_amp_shared so the tool panels and the entity
+-- panels cannot drift apart; see NTx.ComboAdd for why the text is the key.
+local comboAdd, comboGet, comboPick = NTx.ComboAdd, NTx.ComboGet, NTx.ComboPick
 
 local function row(parent, h)
   local r = vgui.Create("DPanel", parent)
@@ -202,8 +185,8 @@ buildAmpUI = function(amp)
   local function loadModel(id)
     sendAmpKind(amp, "profile", function() net.WriteString(tostring(id or "")) end)
   end
-  combo.OnSelect = function(_, _, data)
-    loadModel(data)
+  combo.OnSelect = function()
+    loadModel(comboGet(combo))
   end
   -- Selecting loads it, but a dropdown that was already on the wanted model has
   -- nothing left to fire, so "load" is also a button.
@@ -212,7 +195,7 @@ buildAmpUI = function(amp)
   loadBtn:SetWide(64)
   loadBtn:Dock(RIGHT)
   loadBtn.DoClick = function()
-    loadModel(combo:GetOptionData(combo:GetSelectedID()) or amp:GetProfile())
+    loadModel(comboGet(combo) or amp:GetProfile())
   end
 
   -- Buttons.
@@ -306,18 +289,17 @@ buildAmpUI = function(amp)
     comboAdd(bus, "MID", 0)
     comboAdd(bus, "SUB", 1)
     comboPick(bus, amp:ChannelIsSub(chan) and 1 or 0)
-    bus.OnSelect = function(_, _, data)
+    bus.OnSelect = function()
+      -- Read the value back out of the combo rather than trusting the argument
+      -- GMod passed: the argument did not carry it, so this always saw MID.
+      local want = tonumber(comboGet(bus))
       local mask = amp:GetBusMask()
       -- Named bitv, not bit: a local called bit would shadow the library the
       -- very next line calls.
       local bitv = bit.lshift(1, chan - 1)
-      if tonumber(data) == 1 then mask = bit.bor(mask, bitv) else mask = bit.band(mask, bit.bnot(bitv)) end
-      -- Echo what is being sent. The server now reports its own refusals, so
-      -- between the two a chat line means the click registered and silence
-      -- means the panel never fired - which is the one case this cannot rule
-      -- out from here.
+      if want == 1 then mask = bit.bor(mask, bitv) else mask = bit.band(mask, bit.bnot(bitv)) end
       chat.AddText(Color(255, 200, 90),
-        "[NTx] CH" .. chan .. " -> " .. (tonumber(data) == 1 and "SUB" or "MID")
+        "[NTx] CH" .. chan .. " -> " .. (want == 1 and "SUB" or "MID")
         .. " (sending busmask=" .. mask .. ")")
       setAmp("busmask", mask)
     end
@@ -500,11 +482,11 @@ function NTx.OpenCabinetUI(spk)
     comboAdd(combo, p.name .. (p.saved and " *" or ""), p.id)
   end
   comboPick(combo, spk:GetProfile())
-  combo.OnSelect = function(_, _, data)
+  combo.OnSelect = function()
     net.Start("NTx.SpkProfile")
     net.WriteString("apply")
     net.WriteEntity(spk)
-    net.WriteString(tostring(data or ""))
+    net.WriteString(tostring(comboGet(combo) or ""))
     net.SendToServer()
   end
   label(scroll, "* = saved profile (shared with the server)", COL_DIM, 16):Dock(TOP)
@@ -540,8 +522,8 @@ function NTx.OpenCabinetUI(spk)
   end
   local cur = spk:GetAmp()
   comboPick(ac, IsValid(cur) and cur or NULL)
-  ac.OnSelect = function(_, _, data)
-    local amp = data
+  ac.OnSelect = function()
+    local amp = comboGet(ac)
     if not IsValid(amp) then
       net.Start("NTx.AmpUnlink")
       net.WriteEntity(spk)

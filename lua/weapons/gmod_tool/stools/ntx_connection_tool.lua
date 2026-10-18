@@ -123,15 +123,16 @@ function TOOL.BuildCPanel(panel)
   -- because RightClick reads it on the server.
   local right = panel:ComboBox("Bus playback", cv("busflat"))
   right:SetTall(26)
-  right:AddChoice("3D positional", "0")
-  right:AddChoice("2D stereo", "1")
+  NTx.ComboAdd(right, "3D positional", "0")
+  NTx.ComboAdd(right, "2D stereo", "1")
   local cvar = GetConVar(cv("busflat"))
   local flat = cvar and cvar:GetString() or ""
   -- Preselect by index: ChooseOptionID fires OnSelect, which is still the
 -- no-op the base class provides, so nothing is written during panel build.
-  right:ChooseOptionID(flat == "1" and 2 or 1)
-  right.OnSelect = function(_, _, data)
-    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
+  NTx.ComboPick(right, flat)
+  right.OnSelect = function()
+    local v = tostring(NTx.ComboGet(right) or "")
+    if cvar and cvar:GetString() ~= v then cvar:SetString(v) end
   end
 
   panel:AddControl("Label", { Text = "GIZMOS (owner-only: other players never see them)" })
