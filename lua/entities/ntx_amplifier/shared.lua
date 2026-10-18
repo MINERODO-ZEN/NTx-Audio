@@ -61,6 +61,11 @@ function ENT:SetupDataTables()
   -- published on Ch<N>Bus. This is the mirror the client panel reads, exactly
   -- as Amp/AmpChannel are - wires own the truth, this replicates it.
   self:NetworkVar("Int", 6, "ChannelBuses", { KeyName = "chanbus", Edit = { type = "Float", min = 0, max = 65535, step = 1, order = 14, category = "NTx Amp" } })
+  -- Which channels a wire actually feeds, one bit per channel. ChannelBuses
+  -- alone cannot say: an unwired channel packs as 0, which is indistinguishable
+  -- from a channel genuinely wired to MidL. Without this the client would treat
+  -- every unwired amplifier as MID and play a SUB cabinet's bus as MID.
+  self:NetworkVar("Int", 7, "ChannelFed")
   self:NetworkVar("Bool", 4, "Power", { KeyName = "amppower", Edit = { type = "Boolean", order = 1, category = "NTx Amp Sim" } })
   self:NetworkVar("Bool", 5, "FanOn", { KeyName = "ampfanon", Edit = { type = "Boolean", order = 2, category = "NTx Amp Sim" } })
   self:NetworkVar("Bool", 6, "Standby", { KeyName = "ampstand", Edit = { type = "Boolean", order = 3, category = "NTx Amp Sim" } })
@@ -220,7 +225,10 @@ end
 
 -- The bus this channel is fed, derived from the identifier the mixer publishes
 -- beside the level. This is what the channel IS: not a panel setting that can
--- disagree with the wiring. Returns nil when nothing identifies it yet.
+-- disagree with the wiring.
+--
+-- Always returns a valid id, defaulting to MidL - ask ChannelIsFed first when
+-- the difference between "wired to MID" and "not wired" matters.
 function ENT:ChannelBusId(ch)
   local packed = self:GetChannelBuses() or 0
   local shift = (math.floor(tonumber(ch) or 1) - 1) * 2
@@ -238,6 +246,23 @@ function ENT:SetChannelBus(ch, id)
   packed = bit.band(packed, bit.bnot(bit.lshift(3, shift)))
   packed = bit.bor(packed, bit.lshift(NTx.BusClamp(id), shift))
   self:SetChannelBuses(packed)
+end
+
+-- True when a wire is actually feeding this channel, so its bus means
+-- something. Set from the topology walk on every link and unlink.
+function ENT:SetChannelFed(ch, on)
+  local shift = math.floor(tonumber(ch) or 1) - 1
+  if shift < 0 or shift > 7 then return end
+  local packed = self:GetChannelFed() or 0
+  local bitv = bit.lshift(1, shift)
+  packed = on and bit.bor(packed, bitv) or bit.band(packed, bit.bnot(bitv))
+  self:SetChannelFed(packed)
+end
+
+function ENT:ChannelIsFed(ch)
+  local shift = math.floor(tonumber(ch) or 1) - 1
+  if shift < 0 or shift > 7 then return false end
+  return bit.band(self:GetChannelFed() or 0, bit.lshift(1, shift)) ~= 0
 end
 
 function ENT:ChannelBus(ch)

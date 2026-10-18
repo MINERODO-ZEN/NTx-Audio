@@ -171,10 +171,14 @@ local function rebuild()
   -- actually has a signal input wired.
   for _, amp in ipairs(amps) do
     if IsValid(amp) and wiredUp(amp) then
-      local mixer
-      for ch = 1, math.Clamp(math.floor(amp:GetChannels() or 2), 1, 8) do
+      local mixer, nCh = nil, math.Clamp(math.floor(amp:GetChannels() or 2), 1, 8)
+      for ch = 1, nCh do
         local src = NTx.WireUpstream(amp, sigPortIn(ch))
-        if IsValid(src) and src:GetClass() == "ntx_mixer" then mixer = src break end
+        -- Every channel, not just up to the first one fed: an unlink has to
+        -- clear the bit too, or the client keeps playing an unwired channel's
+        -- stale bus.
+        if amp.SetChannelFed then amp:SetChannelFed(ch, IsValid(src)) end
+        if IsValid(src) and src:GetClass() == "ntx_mixer" then mixer = src end
       end
       if amp:GetMixer() ~= mixer then amp:SetMixer(mixer) end
     end

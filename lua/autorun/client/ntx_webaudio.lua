@@ -87,12 +87,13 @@ local function mixerPageURL()
   return "https://xenonetwork.moe/dsp/webaudio.html"
 end
 
--- Mirror of the mixer gain model, per speaker kind (the split is real here:
--- each tap is filtered, so MID and SUB busses genuinely diverge).
+-- Mirror of the mixer gain model, per bus (the split is real here: each tap is
+-- filtered, so MID and SUB busses genuinely diverge). Takes the bus the tap
+-- actually plays, resolved from the amplifier channel rather than the cabinet.
 -- Faders are logarithmic (NTx.FaderToGain: -60 dB .. +6 dB, unity at 1).
-local function waGain(mrec, inputEnt, stype)
+local function waGain(mrec, inputEnt, playSub)
   if not mrec or mrec.mm then return 0 end
-  local bus = NTx.BusForType(stype)
+  local bus = playSub and "sub" or "mid"
   if bus == "mid" and mrec.midm then return 0 end
   if bus == "sub" and mrec.subm then return 0 end
   local gain = NTx.FaderToGain(mrec.master) * NTx.FaderToGain(bus == "mid" and mrec.mid or mrec.sub)
@@ -155,18 +156,16 @@ local function buildTaps(input, mrec, listenerPos)
     local rank = {}
     for i, s in ipairs(order) do rank[s] = i - 1 end
     for _, s in ipairs(g.members) do
-      local gain = waGain(mrec, input.ent, s.stype) * (input.vol or 1)
-      -- The tool's max distance is a cutoff, not a suggestion: silent
-      -- beyond it, with a linear fade over the last 15% so crossing the
-      -- boundary does not click. (The PannerNode's own maxDistance only
-      -- softens the inverse curve, it never reaches silence.)
-      local maxd = math.Clamp(input.maxd or 1200, 100, 10000)
-      local rangeFade = math.Clamp((maxd - (listenerPos - s.pos):Length()) / math.max(maxd * 0.15, 1), 0, 1)
-      -- Amplifier in the chain. The attenuation the simulation reports (thermal
-      -- foldback, protection, standby, burnt) scales the tap, and the clip ratio
-      -- rides along so the page can flat-top the signal instead of merely making
-      -- it quieter. Active cabinets have no amplifier at all.
+      -- Amplifier in the chain, resolved FIRST because it decides which bus
+      -- this cabinet plays.
+      --
+      -- The bus comes from the amplifier channel, not the cabinet's type. The
+      -- wiring is the truth: a cabinet on a channel the mixer published as
+      -- SubL plays the SUB bus even if its own type says MID. Choosing by
+      -- cabinet type let the audio path and the simulation disagree, which is
+      -- the thing that made a channel's type seem to do nothing.
       local ampGain, ampClip = 1, 1
+      local playSub = s.stype == "SUB"
       local ampEnt = IsValid(s.ent) and s.ent.GetAmp and s.ent:GetAmp() or nil
       if IsValid(ampEnt) and ampEnt:GetClass() == "ntx_amplifier" and not s.ent:GetActive() then
         local ch = NTx.AmpSpeakerChannel(ampEnt, s.ent)
@@ -175,7 +174,22 @@ local function buildTaps(input, mrec, listenerPos)
           ampGain = data.g
           ampClip = data.cl
         end
+        -- Only when a wire feeds the channel. An unwired channel packs as
+        -- MidL, so asking it for a bus would quietly force every unamplified
+        -- or unwired cabinet to play the MID bus.
+        if ch > 0 and ampEnt.ChannelIsFed and ampEnt:ChannelIsFed(ch) then
+          playSub = NTx.BusIsSub(ampEnt:ChannelBusId(ch))
+        end
       end
+      -- Everything downstream (bus fader, tap kind, directivity branch) reads
+      -- playSub rather than the cabinet's type.
+      local gain = waGain(mrec, input.ent, playSub) * (input.vol or 1)
+      -- The tool's max distance is a cutoff, not a suggestion: silent
+      -- beyond it, with a linear fade over the last 15% so crossing the
+      -- boundary does not click. (The PannerNode's own maxDistance only
+      -- softens the inverse curve, it never reaches silence.)
+      local maxd = math.Clamp(input.maxd or 1200, 100, 10000)
+      local rangeFade = math.Clamp((maxd - (listenerPos - s.pos):Length()) / math.max(maxd * 0.15, 1), 0, 1)
       -- A burnt driver is an open circuit: nothing comes out of it.
       if s.ent:GetBlown() then ampGain = 0 end
       if gain > 0.001 and rangeFade > 0 and ampGain > 0 then
@@ -191,7 +205,7 @@ local function buildTaps(input, mrec, listenerPos)
         -- horizontal and vertical FOV can differ per cabinet (PannerNode
         -- only has one circular cone). The panner keeps position, HRTF and
         -- distance; its cone is disabled below.
-        if s.stype == "MID" then
+        if not playSub then
           local hFov, vFov = (s.hFov ~= 0) and s.hFov or 152, (s.vFov ~= 0) and s.vFov or 57
           local outerVol = NTx.DIR.MID.OuterVol
           -- Self-cardioid overrides the throw: front hemisphere full, rear
@@ -213,7 +227,7 @@ local function buildTaps(input, mrec, listenerPos)
         if NTx.CvConeDebug and NTx.CvConeDebug:GetBool() and CurTime() >= (NTx.NextWaConeDbg or 0) then
           NTx.NextWaConeDbg = CurTime() + 2
           print(string.format("[NTx cone/WA] %s%s ent=%s dist=%.0f/%.0f cone=%.3f range=%.2f amp=%.2f cl=%.2f g=%.4f",
-            tostring(s.stype), s.selfcard and "(SC)" or "",
+            playSub and "SUB" or "MID", s.selfcard and "(SC)" or "",
             tostring(IsValid(s.ent) and s.ent:EntIndex() or "?"),
             dist, maxd, coneGain, rangeFade, ampGain, ampClip, gain))
         end
@@ -224,7 +238,7 @@ local function buildTaps(input, mrec, listenerPos)
         local audible = gain * NTx.DistanceGain(dist)
         energy = energy + audible * audible
         taps[#taps + 1] = {
-          id = tostring(s.ent:EntIndex()), kind = s.stype,
+          id = tostring(s.ent:EntIndex()), kind = playSub and "SUB" or "MID",
           g = math.Round(gain, 4), d = math.Round(delayMs, 3), inv = inv,
           px = math.Round(s.pos.x, 2), py = math.Round(s.pos.y, 2), pz = math.Round(s.pos.z, 2),
           -- Cone disabled on the panner (directivity already in g); HRTF and
