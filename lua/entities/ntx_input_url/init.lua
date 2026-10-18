@@ -16,12 +16,15 @@ function ENT:Initialize()
   if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
 end
 
--- Emits the input volume as a nominal level. This is not the audio: the client
--- decodes StreamUrl itself. It exists so a rig wired entirely on signal levels
--- has something to carry, and so an unplugged chain visibly goes to zero.
+-- Emits the input volume scaled by the measured programme level. This is not
+-- the audio: the client decodes StreamUrl itself. The wire carries the level
+-- the source is actually producing, so a mixer wired downstream sums real
+-- levels and the amplifier's load, heat and speaker drive follow the music.
+-- With no recent measurement this stays at the fader value alone.
 function ENT:Think()
   self:NextThink(CurTime() + 0.25)
-  local out = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
+  local gain = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
+  local out = gain * ((NTx.MeasuredRms and NTx.MeasuredRms(self)) or 1)
   if out ~= self.WireOut then
     self.WireOut = out
     NTx.WireOut(self, "Out", out)
