@@ -432,27 +432,6 @@ local LED_LIFT = 0.5         -- how far the domes sit off the chassis face
 local ledModels = {}         -- amp entity -> its cached ClientsideModel
 local ledMats = {}           -- quantised colour -> material
 
--- PAC3 records a position but not always a size, so a lamp's diameter is derived
--- from the chassis instead: a fraction of the model width, which keeps a lamp
--- looking like a lamp on a 19" rack and on a small desktop box alike. Baking a
--- fixed scale (which is what this used to do) made the lamps ~5x too small on a
--- full-width amplifier. An authored Scale, when the file has one, multiplies it.
-local function pac3LampDiameter(ent, lamps)
-  local mn, mx = ent:GetModelBounds()
-  local w = (mx and mn) and (mx.y - mn.y) or 8
-  local d = math.Clamp(w / 64, 0.04, 0.6)
-  -- Every lamp in a layout shares one cached model, so the authored scale can
-  -- only be honoured when the file agrees across them.
-  local mul
-  for _, lamp in ipairs(lamps or {}) do
-    if lamp.scale then
-      mul = mul or lamp.scale
-      if mul ~= lamp.scale then mul = nil break end
-    end
-  end
-  return d * (tonumber(mul) or 1)
-end
-
 -- col is the lit colour and may be nil for a dark lamp, in which case `lens`
 -- (the tint PAC3 recorded) supplies the plastic colour. A dark lamp is never
 -- pure black: a lens keeps its own colour when the emitter is off.
@@ -461,8 +440,6 @@ local function ledMaterial(col, alpha, lens)
   local r, g, b
   if alpha == 0 then
     local base = lens or OFF
-    -- Off lamps read as dark tinted plastic, not as their lit colour. Too dark
-    -- and a panel with nothing playing on it looks like it has no lamps at all.
     r, g, b = base.r * 0.42, base.g * 0.42, base.b * 0.42
   else
     local f = alpha / 255
@@ -567,8 +544,6 @@ local function pac3LampsFor(ent)
 end
 
 local function drawPac3Lamps(ent, rec, lamps)
-  if NTx.Pac3CheckBounds then NTx.Pac3CheckBounds(ent, lamps) end
-
   local model = ledModels[ent]
   if not IsValid(model) then
     model = ClientsideModel("models/led.mdl", RENDERGROUP_OTHER)
@@ -577,31 +552,19 @@ local function drawPac3Lamps(ent, rec, lamps)
     ledModels[ent] = model
   end
 
-  local diam = pac3LampDiameter(ent, lamps)
-  model:SetModelScale(diam / LED_NATIVE, 0)
-
-  -- Depth is NOT taken from PAC3. Measured against a real chassis
-  -- (reciever01b.mdl, bounds x -7.375..7.353), PAC3 places these lamps at
-  -- x=6.351 - about a unit INSIDE the front face - so using its depth drew
-  -- every dome buried in the solid mesh and none of them were visible.
-  --
-  -- Instead the lamps are pinned to the model's own front face and PAC3's x is
-  -- kept only as a RELATIVE depth, measured from the frontmost lamp. A flat
-  -- layout therefore lands flush on the face whatever PAC3 thought the depth
-  -- was, and a lamp deliberately recessed in PAC3 still ends up behind the
-  -- ones in front of it.
-  local mn, mx = ent:GetModelBounds()
-  local faceX, front = mx and mn and (mx.x or 0), (lamps.maxX or 0)
-  -- Push the dome clear of the face rather than leaving it half-sunk in it.
-  local lift = diam * 0.6
+  -- PAC3's values are used exactly as stored, because PAC3 already renders them
+  -- correctly and anything adjusted here is a guess about what the author
+  -- meant. Native model scale is what PAC3 itself uses when a layout records no
+  -- Size or Scale, so an unannotated lamp comes out the same size as it does in
+  -- the editor.
+  model:SetModelScale(1, 0)
 
   for _, lamp in ipairs(lamps) do
     local alpha, col = NTx.Pac3LampState(ent, lamp, rec)
     -- Unlit lamps keep the lens tint PAC3 gave them; lit lamps take the
     -- semantic colour so the world matches the Derma panel.
     local base = col or lamp.lens or OFF
-    local p = Vector(faceX + (lamp.pos.x - front) + lift, lamp.pos.y, lamp.pos.z)
-    model:SetPos(ent:LocalToWorld(p))
+    model:SetPos(ent:LocalToWorld(lamp.pos))
     model:SetAngles(ent:GetAngles() + lamp.ang)
     render.MaterialOverride(ledMaterial(base, alpha, lamp.lens))
     model:DrawModel()

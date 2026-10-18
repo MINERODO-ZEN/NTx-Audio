@@ -101,7 +101,7 @@ end
 local cache = {}
 
 -- Row layout matches the generated file:
---   kind, ch, px, py, pz, ap, ay, ar, lr, lg, lb, scaleMul
+--   kind, ch, px, py, pz, ap, ay, ar, lr, lg, lb
 local function decode(row)
   local kind, ch = row[1], row[2]
   return {
@@ -110,55 +110,7 @@ local function decode(row)
     pos = Vector(row[3], row[4], row[5]),
     ang = Angle(row[6], row[7], row[8]),
     lens = Color(row[9] or 0, row[10] or 0, row[11] or 0),
-    -- 0 means the PAC3 file recorded no Scale, so the diameter comes from the
-    -- chassis instead of from the authored value.
-    scale = (tonumber(row[12]) or 0) > 0 and tonumber(row[12]) or nil,
   }
-end
-
--- One-off sanity check per chassis.
---
--- Two failure modes, and only one of them is a bounds violation:
---   * a lamp outside the model's bounds means PAC3 and GMod disagree about
---     where the model origin is
---   * a lamp INSIDE the bounds can still be buried in the solid mesh, which is
---     exactly what happened with reciever01b.mdl: PAC3 authored x=6.351 while
---     the face sits at 7.353, so every lamp was ~0.85 units under the surface
---     and invisible. Bounds alone cannot catch that, so the depth is checked
---     against the front face separately.
-local originWarned = {}
-local function warnIfOutsideBounds(ent, lamps)
-  local key = ent:GetModel()
-  if originWarned[key] then return end
-  local mn, mx = ent:GetModelBounds()
-  if not mn or not mx then return end
-  -- A little slack: a lamp legitimately authored just proud of the face is
-  -- still inside, so only a clear excursion counts.
-  local pad = Vector(2, 2, 2)
-  for _, lamp in ipairs(lamps) do
-    if lamp.pos.x < mn.x - pad.x or lamp.pos.x > mx.x + pad.x
-      or lamp.pos.y < mn.y - pad.y or lamp.pos.y > mx.y + pad.y
-      or lamp.pos.z < mn.z - pad.z or lamp.pos.z > mx.z + pad.z then
-      originWarned[key] = true
-      print(string.format(
-        "[NTx] PAC3 lamp %q on %s is outside the model bounds (model %s..%s). "
-        .. "PAC3 and GMod disagree about the model origin, so the lamps will "
-        .. "render in the wrong place.", tostring(lamp.kind), key,
-        tostring(mn), tostring(mx)))
-      return
-    end
-  end
-  -- Inside the bounds, but sunk below the face.
-  local front = lamps.maxX
-  if front and front < mx.x - 0.5 then
-    originWarned[key] = true
-    print(string.format(
-      "[NTx] PAC3 lamps on %s sit at x=%.3f but the front face is x=%.3f, "
-      .. "so they were authored %.2f units inside the chassis. They are being "
-      .. "pinned to the face instead; re-author them in PAC3 against the model "
-      .. "surface if the depth matters.",
-      key, front, mx.x, mx.x - front))
-  end
 end
 
 function NTx.Pac3Lamps(ent)
@@ -180,18 +132,10 @@ function NTx.Pac3Lamps(ent)
   local lamps
   if rows and #rows > 0 then
     lamps = {}
-    -- Frontmost authored depth, used by the renderer to turn PAC3's absolute x
-    -- into a depth relative to whatever it measures against. See
-    -- drawPac3Lamps - PAC3's absolute x does not line up with GMod's face.
-    local maxX
     for i = 1, #rows do
       local ok, lamp = pcall(decode, rows[i])
-      if ok and lamp then
-        lamps[#lamps + 1] = lamp
-        if not maxX or lamp.pos.x > maxX then maxX = lamp.pos.x end
-      end
+      if ok and lamp then lamps[#lamps + 1] = lamp end
     end
-    lamps.maxX = maxX or 0
   end
   cache[key] = lamps or false
   return lamps
@@ -202,8 +146,6 @@ end
 function NTx.ReloadPac3Lamps()
   cache = {}
 end
-
-NTx.Pac3CheckBounds = warnIfOutsideBounds
 
 -- Evaluate one lamp for this frame.
 function NTx.Pac3LampState(ent, lamp, rec)
@@ -251,9 +193,8 @@ concommand.Add("ntx_leds_debug", function(_, _, args)
   end
   for i, lamp in ipairs(lamps) do
     local world = target:LocalToWorld(lamp.pos)
-    print(string.format("    [%d] %-8s ch%s pos=%s ang=%s lens=%s scale=%s world=%s",
+    print(string.format("    [%d] %-8s ch%s pos=%s ang=%s lens=%s world=%s",
       i, tostring(lamp.kind), tostring(lamp.ch), tostring(lamp.pos), tostring(lamp.ang),
-      tostring(lamp.lens), tostring(lamp.scale), tostring(world)))
+      tostring(lamp.lens), tostring(world)))
   end
-  NTx.Pac3CheckBounds(target, lamps)
 end)
