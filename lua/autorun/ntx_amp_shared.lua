@@ -637,34 +637,14 @@ end
 
 -- The shift state of a tool click.
 --
--- Player:KeyDown is documented as "not networked... only the local client can
--- see the keys they are pressing", but Advanced Duplicator 2 reads
--- ply:KeyDown(IN_SPEED) inside TOOL:RightClick - which also runs on the server -
--- and that works. The key state reaches the server with the owning player's
--- usercmd, so it is this player's own keys we read, which is all we need.
---
--- The client mirror below is belt and braces: it cannot disagree with the local
--- input, and it covers the case where the usercmd for the click frame has not
--- caught up with the key press yet.
-local function modMask()
-  if input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT) then return 1 end
-  return 0
-end
-
-if CLIENT then
-  -- Every frame, so the value the server reads is the value held at the moment
-  -- of the click rather than whenever the last net message happened to land.
-  hook.Add("Think", "NTx.ModWatch", function()
-    local ply = LocalPlayer()
-    if IsValid(ply) then ply:SetNWInt("NtxMods", modMask()) end
-  end)
-end
-
+-- TOOL:LeftClick runs on the server, so it reads the owning player's key state
+-- directly. Advanced Duplicator 2 does the same with ply:KeyDown(IN_SPEED)
+-- (advdupe2.lua:263) and it works server-side -- the key state reaches the
+-- server with the owning player's usercmd, so it is this player's own keys we
+-- read, which is all we need.
 function NTx.ToolShift(ply)
   if not IsValid(ply) then return false end
-  -- The client's own answer first, then the owning player's key state.
-  if ply:GetNWInt("NtxMods", 0) > 0 then return true end
-  return ply:KeyDown(KEY_LSHIFT) or ply:KeyDown(KEY_RSHIFT)
+  return ply:KeyDown(IN_SPEED)
 end
 
 -- Build stamp. Tool panels and entity panels are two different code paths that
