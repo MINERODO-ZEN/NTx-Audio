@@ -5,8 +5,9 @@
 --   NTx.AmpRecord(ent)     the per-amplifier numbers, for panels and status
 --   NTx.AmpChannelMeter()  what the LEDs should show, refined by the page's own
 --                          RMS reading when the hosted page supports it
---   NTx.DrawAmpPanel()     the LEDs themselves, drawn identically in 3D on the
---                          amplifier and in the Derma panel
+--   NTx.DrawAmpPanel()     the LEDs themselves, painted in 2D inside the Derma
+--                          panel; in the world the same lamps render as
+--                          models/led.mdl via NTx.DrawAmpWorldLeds below
 --
 -- LED layouts follow the hardware manuals:
 --   Crown MA2400   one multifunction green Signal/IOC LED per channel that
@@ -415,6 +416,189 @@ function NTx.DrawAmpPanel(ent, opts)
     end
   end
 end
+
+-- ----------------------------------------------------------- in-world LEDs
+
+-- The Derma panel paints its lamps with surface.DrawRect in the 512x112
+-- virtual space; in the world each lamp position becomes a real models/led.mdl.
+-- Same layout, same state, same conditions - only the ink differs.
+--
+-- render.Model() cannot scale its staging entity, so the model is a cached
+-- ClientsideModel driven by hand (SetPos/SetAngles/DrawModel); the material is
+-- swapped per lamp with render.MaterialOverride so the LED colour never
+-- depends on what the model's own textures happen to look like.
+local LED_NATIVE = 1.37      -- models/led.mdl bounding size, in model units
+local LED_PX = 12            -- target lamp diameter, in virtual panel pixels
+local LED_LIFT = 0.5         -- how far the domes sit off the chassis face
+
+local ledModels = {}         -- amp entity -> its cached ClientsideModel
+local ledMats = {}           -- quantised colour -> material
+
+local function ledMaterial(col, alpha)
+  alpha = math.Clamp(tonumber(alpha) or 0, 0, 255)
+  local r, g, b
+  if alpha == 0 then
+    -- An unlit lamp is not black: the lens keeps its own plastic colour.
+    r, g, b = OFF.r, OFF.g, OFF.b
+  else
+    local f = alpha / 255
+    r, g, b = col.r * f, col.g * f, col.b * f
+  end
+  -- Quantise so blink and dim levels share cached materials.
+  r = math.floor(r / 32) * 32
+  g = math.floor(g / 32) * 32
+  b = math.floor(b / 32) * 32
+  local key = r .. "_" .. g .. "_" .. b
+  local m = ledMats[key]
+  if m == nil then
+    m = CreateMaterial("ntx_led_" .. key, "UnlitGeneric", {
+      ["$basetexture"] = "vgui/white",
+      ["$nocull"] = "1",
+      ["$color2"] = string.format("[%f %f %f]", r / 255, g / 255, b / 255),
+    })
+    ledMats[key] = m
+  end
+  return m
+end
+
+-- Lamp positions on the virtual panel, straight from the same conditions
+-- DrawAmpPanel uses. x/y are panel pixels; alpha 0 means the lens is dark.
+local function ledPoints(ent, rec)
+  local pts = {}
+  local W = NTx.AMP_PANEL_W
+  local style = math.floor(tonumber(ent:GetMeters()) or 0)
+  local blown = ent:GetBlown() == true
+  local powered = ent:GetPower() == true and not blown
+
+  -- Power lamp, left edge; standby breathes instead of going dark.
+  local power = powered and 255 or 0
+  if powered and ent:GetStandby() then
+    power = math.floor(CurTime() * 1.5) % 2 == 0 and 90 or 0
+  end
+  pts[#pts + 1] = { x = 10, y = 10, col = BLUE, alpha = power }
+
+  local usable = ent:UsableChannels()
+  local stripW = math.floor((W - 24) / math.max(usable, 1))
+  local chans = ent:ActiveChannels()
+  for idx, ch in ipairs(chans) do
+    local x0 = 22 + (idx - 1) * stripW
+    local y0 = 10
+    local s = NTx.AmpLedState(ent, ch)
+    local c = rec and rec.ch[idx]
+    local meter = (s and s.meter) or { linDb = -120, below = -120 }
+    if style == 1 then
+      -- Crown MA: the multifunction IOC lamp plus the ODEP lamp beside it.
+      if s and s.hot then
+        pts[#pts + 1] = { x = x0 + 8, y = y0, col = Color(170, 255, 190), alpha = 255 }
+      elseif s and s.on then
+        -- Blink in step with the programme, exactly like iocLamp().
+        local duty = math.Clamp((s.duty or 0) * 0.9 + 0.1, 0.1, 1)
+        local on = (math.sin(CurTime() * 22) * 0.5 + 0.5) < duty
+        pts[#pts + 1] = { x = x0 + 8, y = y0, col = GREEN, alpha = on and 255 or 40 }
+      else
+        pts[#pts + 1] = { x = x0 + 8, y = y0, col = GREEN, alpha = 0 }
+      end
+      local red = math.min(0, (c and c.gainred) or 0)
+      local lim = math.Clamp(-red / 8, 0, 1)
+      pts[#pts + 1] = { x = x0 + 24, y = y0, col = AMBER,
+        alpha = lim > 0.02 and (90 + lim * 165) or 0 }
+    else
+      -- Crown CDi: three greens, then clip and temp in red.
+      pts[#pts + 1] = { x = x0 + 8, y = y0, col = GREEN,
+        alpha = meter.linDb > -40 and 255 or 0 }
+      pts[#pts + 1] = { x = x0 + 22, y = y0, col = GREEN,
+        alpha = meter.below > -20 and 255 or 0 }
+      pts[#pts + 1] = { x = x0 + 36, y = y0, col = GREEN,
+        alpha = meter.below > -10 and 255 or 0 }
+      pts[#pts + 1] = { x = x0 + 54, y = y0, col = RED,
+        alpha = ((c and c.clip) or (s and s.hot)) and 255 or 0 }
+      pts[#pts + 1] = { x = x0 + 68, y = y0, col = RED,
+        alpha = (ent:GetTempDev() >= 80 or (c and c.protect)) and 255 or 0 }
+    end
+  end
+
+  -- Fault lamp, right edge; blinks like the panel's.
+  local fault = (rec and rec.fault) or 0
+  local faultOn = fault ~= 0 and fault ~= 9
+  local blink = faultOn and (math.floor(CurTime() * 4) % 2 == 0) or false
+  pts[#pts + 1] = { x = W - 12, y = 10, col = (fault == 8) and DIM or RED,
+    alpha = faultOn and (blink and 255 or 60) or 0 }
+  return pts
+end
+
+-- Put the lamp models on the amplifier's leading face. Model bounds are in
+-- model space (x depth, y width, z height), so the face plane is at max x and
+-- the strip is centred on the bounding box, then scaled so the whole virtual
+-- panel fits the real face.
+function NTx.DrawAmpWorldLeds(ent, rec)
+  local mn, mx = ent:GetModelBounds()
+  if not mn or not mx then return end
+  local size = mx - mn
+  if size.y < 1 or size.z < 1 then return end
+  local scale = math.min((size.y * 0.86) / NTx.AMP_PANEL_W,
+    (size.z * 0.8) / NTx.AMP_PANEL_H)
+  if scale <= 0 then return end
+
+  local ang = ent:GetAngles()
+  local fwd, right, up = ang:Forward(), ang:Right(), ang:Up()
+  local cy = (mn.y + mx.y) * 0.5
+  local cz = (mn.z + mx.z) * 0.5
+  local face = ent:GetPos() + fwd * mx.x + right * cy + up * cz
+  local topLeft = face
+    - right * (NTx.AMP_PANEL_W * scale * 0.5)
+    + up * (NTx.AMP_PANEL_H * scale * 0.5)
+
+  local model = ledModels[ent]
+  if not IsValid(model) then
+    model = ClientsideModel("models/led.mdl", RENDERGROUP_OTHER)
+    if not IsValid(model) then return end
+    model:SetNoDraw(true)
+    model:SetModelScale((LED_PX * scale) / LED_NATIVE, 0)
+    ledModels[ent] = model
+  end
+
+  for _, p in ipairs(ledPoints(ent, rec)) do
+    local pos = topLeft + right * (p.x * scale) - up * (p.y * scale)
+      + fwd * LED_LIFT
+    model:SetPos(pos)
+    model:SetAngles(ang)
+    render.MaterialOverride(ledMaterial(p.col, p.alpha))
+    model:DrawModel()
+  end
+  render.MaterialOverride()
+end
+
+-- Owner with the panel gizmo on, same gate the old 3D panel had, plus the
+-- obvious visibility culls.
+hook.Add("PostDrawOpaqueRenderables", "NTx.AmpWorldLeds", function()
+  local cv = GetConVar("ntx_gizmo_amp")
+  if not cv or not cv:GetBool() then return end
+  local leds = GetConVar("ntx_amp_leds")
+  if leds and not leds:GetBool() then return end
+  if not NTx.IsMine then return end
+  local eye = EyePos()
+  for _, rec in pairs(NTx.Amps) do
+    local ent = rec.ent
+    if IsValid(ent) and not ent:IsDormant()
+      and eye:DistToSqr(ent:GetPos()) < 4000 * 4000
+      and NTx.IsMine(ent) then
+      NTx.DrawAmpWorldLeds(ent, rec)
+    end
+  end
+end)
+
+-- Lamp models and LED memory follow their amplifier out of the world.
+hook.Add("EntityRemoved", "NTx.AmpLedCleanup", function(ent)
+  local model = ledModels[ent]
+  if model ~= nil then
+    ledModels[ent] = nil
+    if IsValid(model) then model:Remove() end
+  end
+  local base = ent:EntIndex() * 16
+  for key in pairs(NTx.AmpLeds) do
+    if key > base and key <= base + 15 then NTx.AmpLeds[key] = nil end
+  end
+end)
 
 -- -------------------------------------------------------------- audio taps
 
