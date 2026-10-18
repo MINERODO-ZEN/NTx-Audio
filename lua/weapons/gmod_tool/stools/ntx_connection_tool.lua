@@ -12,7 +12,7 @@
 --   reload       unlink the aimed entity from whatever it feeds; also clears
 --                 the pending source selection
 TOOL.Category = "NTx"
-TOOL.Name = "#tool.ntx_connection.name"
+TOOL.Name = "#tool.ntx_connection_tool.name"
 TOOL.Command = nil
 TOOL.ConfigName = ""
 
@@ -162,7 +162,7 @@ end
 
 -- Note: dot syntax (static). The spawnmenu calls this as TOOL.BuildCPanel(panel).
 function TOOL.BuildCPanel(panel)
-  panel:AddControl("Header", { Description = "#tool.ntx_connection.desc" })
+  panel:AddControl("Header", { Description = "#tool.ntx_connection_tool.desc" })
   panel:AddControl("Label", {
     Text = "Left-click: source, then destination (input/cabinet/bus -> mixer, cabinet -> amplifier, mixer -> amplifier opens the patch panel).\nRight-click an input or bus: apply its settings. Reload: unlink.",
   })
@@ -188,7 +188,12 @@ function TOOL.BuildCPanel(panel)
   right:SetTall(26)
   right:AddChoice("3D positional", "0")
   right:AddChoice("2D stereo", "1")
-  right:SetValue(GetConVarString("ntx_audio_busflat"))
+  right.OnSelect = function(_, _, data)
+    RunConsoleCommand("ntx_audio_busflat " .. tostring(data or ""))
+  end
+  local flat = GetConVarString("ntx_audio_busflat")
+  if flat == "1" then right:ChooseOptionID(2) end
+  right:SetValue(flat)
 
   panel:AddControl("Label", { Text = "GIZMOS (owner-only: other players never see them)" })
   panel:AddControl("CheckBox", {
@@ -198,11 +203,11 @@ function TOOL.BuildCPanel(panel)
 end
 
 if CLIENT then
-  language.Add("tool.ntx_connection.name", "NTx Connections")
-  language.Add("tool.ntx_connection.desc", "Link sources, cabinets and amplifiers; configure inputs and buses")
-  language.Add("tool.ntx_connection.left", "Select source / link to mixer or amplifier / open its UI")
-  language.Add("tool.ntx_connection.right", "Apply settings to the aimed input or bus")
-  language.Add("tool.ntx_connection.reload", "Unlink the aimed entity")
+  language.Add("tool.ntx_connection_tool.name", "NTx Connections")
+  language.Add("tool.ntx_connection_tool.desc", "Link sources, cabinets and amplifiers; configure inputs and buses")
+  language.Add("tool.ntx_connection_tool.left", "Select source / link to mixer or amplifier / open its UI")
+  language.Add("tool.ntx_connection_tool.right", "Apply settings to the aimed input or bus")
+  language.Add("tool.ntx_connection_tool.reload", "Unlink the aimed entity")
 end
 
 TOOL.Information = { { name = "left" }, { name = "right" }, { name = "reload" } }

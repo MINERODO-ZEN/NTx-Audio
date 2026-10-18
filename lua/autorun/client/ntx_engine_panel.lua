@@ -204,7 +204,6 @@ local function buildAmpContents(panel)
   serverCheck(panel, "Run the amplifier simulation", "ntx_amp_sim")
   serverCheck(panel, "Amplifiers take permanent damage and can burn out", "ntx_amp_damage")
   serverCheck(panel, "Cabinets take damage and can blow", "ntx_spk_damage")
-  panel:CheckBox("Draw amplifier front panels in the world", "ntx_gizmo_amp")
   panel:CheckBox("Panel LEDs on (off leaves the simulation running)", "ntx_amp_leds")
   panel:CheckBox("Print the amplifier table every 2 s", "ntx_amp_debug")
 

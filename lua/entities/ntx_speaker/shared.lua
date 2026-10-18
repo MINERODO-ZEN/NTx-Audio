@@ -46,7 +46,10 @@ end
 -- Electrical stamp from a speaker profile. Kept on the entity so the tool, the
 -- Utilities page and the duplicator all land on the same code path.
 function ENT:ApplySpeakerProfile(id)
-  local p = NTx.SpeakerProfile(id)
+  -- ById, not SpeakerProfile: a saved profile lives in the server's table, not
+  -- in the built-in one, and looking it up in the wrong place is what made
+  -- "load this profile I saved" do nothing at all.
+  local p = NTx.SpeakerProfileById(id)
   if not p then return false end
   self:SetProfile(p.id)
   self:SetSpeakerType(p.stype or self:GetSpeakerType())

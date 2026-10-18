@@ -27,8 +27,6 @@ NTx.PageRms = NTx.PageRms or {}
 -- Per channel LED memory: hold timers and blink phase.
 NTx.AmpLeds = NTx.AmpLeds or {}
 
-CreateClientConVar("ntx_gizmo_amp", "0", true, false,
-  "Show owner-only amplifier front panels: signal / clip / protect LEDs and the channel readouts")
 CreateClientConVar("ntx_amp_leds", "1", true, false,
   "Master switch for amplifier panel LEDs (0 = dark panels, state still simulated)")
 CreateClientConVar("ntx_amp_debug", "0", true, false,
@@ -568,20 +566,17 @@ function NTx.DrawAmpWorldLeds(ent, rec)
   render.MaterialOverride()
 end
 
--- Owner with the panel gizmo on, same gate the old 3D panel had, plus the
--- obvious visibility culls.
+-- The front panels are part of the hardware: every amplifier shows its LEDs to
+-- every player, all the time. The master LED switch and the obvious visibility
+-- culls still apply.
 hook.Add("PostDrawOpaqueRenderables", "NTx.AmpWorldLeds", function()
-  local cv = GetConVar("ntx_gizmo_amp")
-  if not cv or not cv:GetBool() then return end
   local leds = GetConVar("ntx_amp_leds")
   if leds and not leds:GetBool() then return end
-  if not NTx.IsMine then return end
   local eye = EyePos()
   for _, rec in pairs(NTx.Amps) do
     local ent = rec.ent
     if IsValid(ent) and not ent:IsDormant()
-      and eye:DistToSqr(ent:GetPos()) < 4000 * 4000
-      and NTx.IsMine(ent) then
+      and eye:DistToSqr(ent:GetPos()) < 4000 * 4000 then
       NTx.DrawAmpWorldLeds(ent, rec)
     end
   end

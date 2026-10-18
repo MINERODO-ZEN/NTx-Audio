@@ -9,7 +9,7 @@
 --
 -- Patching a cabinet to an amplifier is the Connections tool's job.
 TOOL.Category = "NTx"
-TOOL.Name = "#tool.ntx_speaker.name"
+TOOL.Name = "#tool.ntx_speaker_tool.name"
 TOOL.Command = nil
 TOOL.ConfigName = ""
 
@@ -104,20 +104,58 @@ function TOOL:Reload(tr)
   return true
 end
 
--- Convar-bound dropdown, built by hand for the same reason as the amp tool.
+-- Convar-bound dropdown.
+--
+-- AddControl("ComboBox", {MenuButton = 1}) does NOT build a value dropdown: it
+-- hands the case to a preset picker that never shows the current value. The
+-- DForm row is the real control, but it does not write the convar when an
+-- option is picked - and the convar is what RightClick reads on the server, so
+-- the selection is written here instead of trusted.
 local function dropdown(panel, label, convar, choices)
   local right = panel:ComboBox(label, convar)
   right:SetTall(26)
   for _, ch in ipairs(choices) do
     right:AddChoice(ch[1], ch[2])
   end
-  right:SetValue(GetConVarString(convar))
+  right.OnSelect = function(_, _, data)
+    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  end
+  local current = GetConVarString(convar)
+  for i, ch in ipairs(choices) do
+    if tostring(ch[2]) == current then right:ChooseOptionID(i) break end
+  end
+  right:SetValue(current)
   return right
+end
+
+-- The profile picker is built by hand for the same reason, plus one more: the
+-- profile list is dynamic (saved profiles arrive over the network at any time),
+-- so a preset picker has nothing to show. Choosing a profile writes
+-- ntx_audio_spkprofile, which is what RightClick applies.
+local function profilePicker(panel, list, convar, mark)
+  local combo = vgui.Create("DComboBox", panel)
+  combo:Dock(TOP)
+  combo:DockMargin(4, 0, 4, 0)
+  combo:SetTall(26)
+  local index = {}
+  for i, p in ipairs(list) do
+    combo:AddChoice(p.name .. (p.saved and mark or ""), p.id)
+    index[p.id] = i
+  end
+  combo.OnSelect = function(_, _, data)
+    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  end
+  local chosen = index[GetConVarString(convar)] or (list[1] and 1)
+  if chosen then
+    combo:ChooseOptionID(chosen)
+    combo:SetValue(combo:GetOptionText(chosen))
+  end
+  return combo
 end
 
 -- Note: dot syntax (static). The spawnmenu calls this as TOOL.BuildCPanel(panel).
 function TOOL.BuildCPanel(panel)
-  panel:AddControl("Header", { Description = "#tool.ntx_speaker.desc" })
+  panel:AddControl("Header", { Description = "#tool.ntx_speaker_tool.desc" })
   panel:AddControl("Label", {
     Text = "Left-click a cabinet to open its full panel. Right-click applies the settings below (profile included). Reload flips polarity; alt+reload unlinks it from its amplifier.",
   })
@@ -127,12 +165,7 @@ function TOOL.BuildCPanel(panel)
   -- stores the aimed cabinet under the typed name. Both act on the crosshair,
   -- so no panel has to be open for a profile to move.
   panel:AddControl("Label", { Text = "CABINET PROFILE" })
-  local spkCombo = panel:ComboBox("Profile", "ntx_audio_spkprofile")
-  spkCombo:SetTall(26)
-  for _, p in ipairs(NTx.AllSpeakerProfiles()) do
-    spkCombo:AddChoice(p.name .. (p.saved and " *" or ""), p.id)
-  end
-  spkCombo:SetValue(GetConVarString("ntx_audio_spkprofile"))
+  local spkCombo = profilePicker(panel, NTx.AllSpeakerProfiles(), "ntx_audio_spkprofile", " *")
 
   local loadRow = vgui.Create("DPanel", panel)
   loadRow:Dock(TOP)
@@ -152,7 +185,10 @@ function TOOL.BuildCPanel(panel)
     net.Start("NTx.SpkProfile")
     net.WriteString("apply")
     net.WriteEntity(spk)
-    net.WriteString(spkCombo:GetOptionData(spkCombo:GetSelectedID()) or "")
+    -- Whatever the combo currently points at, with the convar as the fallback:
+    -- the button has to work even if the combo never got a selection.
+    net.WriteString(tostring(spkCombo:GetOptionData(spkCombo:GetSelectedID())
+      or GetConVarString("ntx_audio_spkprofile")))
     net.SendToServer()
   end
   local saveBtn = vgui.Create("DButton", loadRow)
@@ -245,11 +281,11 @@ function TOOL.BuildCPanel(panel)
 end
 
 if CLIENT then
-  language.Add("tool.ntx_speaker.name", "NTx Speaker")
-  language.Add("tool.ntx_speaker.desc", "Cabinet profile, power and placement settings")
-  language.Add("tool.ntx_speaker.left", "Open the cabinet panel")
-  language.Add("tool.ntx_speaker.right", "Apply these settings to the cabinet")
-  language.Add("tool.ntx_speaker.reload", "Flip polarity (alt: unlink from amplifier)")
+  language.Add("tool.ntx_speaker_tool.name", "NTx Speaker")
+  language.Add("tool.ntx_speaker_tool.desc", "Cabinet profile, power and placement settings")
+  language.Add("tool.ntx_speaker_tool.left", "Open the cabinet panel")
+  language.Add("tool.ntx_speaker_tool.right", "Apply these settings to the cabinet")
+  language.Add("tool.ntx_speaker_tool.reload", "Flip polarity (alt: unlink from amplifier)")
 end
 
 TOOL.Information = { { name = "left" }, { name = "right" }, { name = "reload" } }

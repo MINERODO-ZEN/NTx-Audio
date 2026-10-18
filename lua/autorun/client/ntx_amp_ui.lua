@@ -162,8 +162,21 @@ function NTx.OpenAmpUI(amp)
   combo:Dock(FILL)
   for _, id in ipairs(NTx.AmpProfileIds()) do comboAdd(combo, NTx.AmpProfile(id).name, id) end
   comboPick(combo, amp:GetProfile())
+  -- One place sends the model, so the dropdown and the button can never drift.
+  local function loadModel(id)
+    sendAmpKind(amp, "profile", function() net.WriteString(tostring(id or "")) end)
+  end
   combo.OnSelect = function(_, _, data)
-    sendAmpKind(amp, "profile", function() net.WriteString(tostring(data or "")) end)
+    loadModel(data)
+  end
+  -- Selecting loads it, but a dropdown that was already on the wanted model has
+  -- nothing left to fire, so "load" is also a button.
+  local loadBtn = vgui.Create("DButton", prow)
+  loadBtn:SetText("Load")
+  loadBtn:SetWide(64)
+  loadBtn:Dock(RIGHT)
+  loadBtn.DoClick = function()
+    loadModel(combo:GetOptionData(combo:GetSelectedID()) or amp:GetProfile())
   end
 
   -- Buttons.
@@ -421,7 +434,9 @@ function NTx.OpenCabinetUI(spk)
   scroll:Dock(FILL)
 
   local prow = row(scroll, 30)
-  label(prow, "Profile").SetWide(110)
+  local plbl = label(prow, "Profile")
+  plbl:SetWide(110)
+  plbl:Dock(LEFT)
   local combo = vgui.Create("DComboBox", prow)
   combo:Dock(FILL)
   for _, p in ipairs(NTx.AllSpeakerProfiles()) do

@@ -9,7 +9,7 @@
 -- Linking an amplifier to a mixer is the Connections tool's job; cabinet
 -- settings live on the Speaker tool.
 TOOL.Category = "NTx"
-TOOL.Name = "#tool.ntx_amp.name"
+TOOL.Name = "#tool.ntx_amp_tool.name"
 TOOL.Command = nil
 TOOL.ConfigName = ""
 
@@ -83,33 +83,59 @@ function TOOL:Reload(tr)
   return true
 end
 
--- Convar-bound dropdown. DForm's ComboBox would route this to a preset picker
--- that never shows the current value, so the row is built by hand and the
--- choice is written back to the convar on select.
+-- Convar-bound dropdown. DForm's ComboBox builds the row correctly but does not
+-- write the convar when an option is picked, and the convar is what RightClick
+-- reads on the server - so the selection is written here instead of trusted.
 local function dropdown(panel, label, convar, choices)
   local right = panel:ComboBox(label, convar)
   right:SetTall(26)
   for _, ch in ipairs(choices) do
     right:AddChoice(ch[1], ch[2])
   end
-  right:SetValue(GetConVarString(convar))
+  right.OnSelect = function(_, _, data)
+    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  end
+  local current = GetConVarString(convar)
+  for i, ch in ipairs(choices) do
+    if tostring(ch[2]) == current then right:ChooseOptionID(i) break end
+  end
+  right:SetValue(current)
   return right
+end
+
+-- The model list is dynamic (it grows with every profile NTx knows), so it is
+-- built by hand rather than through the DForm row. Choosing a model writes
+-- ntx_audio_ampprofile, which RightClick applies.
+local function modelPicker(panel, convar)
+  local combo = vgui.Create("DComboBox", panel)
+  combo:Dock(TOP)
+  combo:DockMargin(4, 0, 4, 0)
+  combo:SetTall(26)
+  local index = {}
+  for i, id in ipairs(NTx.AmpProfileIds()) do
+    combo:AddChoice(NTx.AmpProfile(id).name, id)
+    index[id] = i
+  end
+  combo.OnSelect = function(_, _, data)
+    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  end
+  local chosen = index[GetConVarString(convar)] or (index[NTx.AmpProfileIds()[1]] or 1)
+  if chosen then
+    combo:ChooseOptionID(chosen)
+    combo:SetValue(combo:GetOptionText(chosen))
+  end
+  return combo
 end
 
 -- Note: dot syntax (static). The spawnmenu calls this as TOOL.BuildCPanel(panel).
 function TOOL.BuildCPanel(panel)
-  panel:AddControl("Header", { Description = "#tool.ntx_amp.desc" })
+  panel:AddControl("Header", { Description = "#tool.ntx_amp_tool.desc" })
   panel:AddControl("Label", {
     Text = "Left-click an amplifier to open its full panel. Right-click applies the settings below. Reload clears faults and revives it.",
   })
 
   panel:AddControl("Label", { Text = "AMPLIFIER MODEL" })
-  local combo = panel:ComboBox("Model", "ntx_audio_ampprofile")
-  combo:SetTall(26)
-  for _, id in ipairs(NTx.AmpProfileIds()) do
-    combo:AddChoice(NTx.AmpProfile(id).name, id)
-  end
-  combo:SetValue(GetConVarString("ntx_audio_ampprofile"))
+  modelPicker(panel, "ntx_audio_ampprofile")
   panel:AddControl("Label", {
     Text = "Choosing a model stamps its published power, sensitivity, PFC, thermal limits and meter layout onto the amplifier.",
   })
@@ -161,11 +187,11 @@ function TOOL.BuildCPanel(panel)
 end
 
 if CLIENT then
-  language.Add("tool.ntx_amp.name", "NTx Amplifier")
-  language.Add("tool.ntx_amp.desc", "Amplifier model, channel and protection settings")
-  language.Add("tool.ntx_amp.left", "Open the amplifier panel")
-  language.Add("tool.ntx_amp.right", "Apply these settings to the amplifier")
-  language.Add("tool.ntx_amp.reload", "Clear faults and revive the amplifier")
+  language.Add("tool.ntx_amp_tool.name", "NTx Amplifier")
+  language.Add("tool.ntx_amp_tool.desc", "Amplifier model, channel and protection settings")
+  language.Add("tool.ntx_amp_tool.left", "Open the amplifier panel")
+  language.Add("tool.ntx_amp_tool.right", "Apply these settings to the amplifier")
+  language.Add("tool.ntx_amp_tool.reload", "Clear faults and revive the amplifier")
 end
 
 TOOL.Information = { { name = "left" }, { name = "right" }, { name = "reload" } }
