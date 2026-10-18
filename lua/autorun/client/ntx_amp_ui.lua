@@ -312,6 +312,13 @@ buildAmpUI = function(amp)
       -- very next line calls.
       local bitv = bit.lshift(1, chan - 1)
       if tonumber(data) == 1 then mask = bit.bor(mask, bitv) else mask = bit.band(mask, bit.bnot(bitv)) end
+      -- Echo what is being sent. The server now reports its own refusals, so
+      -- between the two a chat line means the click registered and silence
+      -- means the panel never fired - which is the one case this cannot rule
+      -- out from here.
+      chat.AddText(Color(255, 200, 90),
+        "[NTx] CH" .. chan .. " -> " .. (tonumber(data) == 1 and "SUB" or "MID")
+        .. " (sending busmask=" .. mask .. ")")
       setAmp("busmask", mask)
     end
     local info = label(cr, "-", COL_DIM)

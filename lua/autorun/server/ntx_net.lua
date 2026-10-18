@@ -364,28 +364,70 @@ end
 
 -- ------------------------------------------------------------ amplifier edits
 
-local function applyFields(kind, ent, pairsCount)
+-- Editing an entity is refused for three different reasons and all of them used
+-- to be silent, so "the dropdown did nothing" had no explanation. The reason is
+-- reported so the refusal can be told apart from a message that never arrived.
+local function editRefusal(ply, ent)
+  if not IsValid(ent) then return "it no longer exists" end
+  if not IsValid(ply) then return "invalid player" end
+  if ply:IsAdmin() then return nil end
+  local owner = ent.CPPIGetOwner and ent:CPPIGetOwner() or NULL
+  if owner == ply then return nil end
+  if not IsValid(owner) then
+    local cv = GetConVar("ntx_mixer_admin_only")
+    if cv and cv:GetBool() then
+      return "it is a shared rig and ntx_mixer_admin_only is on"
+    end
+    return nil
+  end
+  return "you do not own it (owner is " .. tostring(owner:Nick()) .. ")"
+end
+
+local function applyFields(ply, kind, ent, pairsCount)
   for _ = 1, pairsCount do
     local name = net.ReadString()
     local value = net.ReadFloat()
     local entry = (kind == "amp") and NTx.AmpField(name) or NTx.SpkField(name)
-    if entry and entry.set then pcall(entry.set, ent, value) end
+    if not entry then
+      ply:ChatPrint("[NTx] Rejected: unknown field '" .. tostring(name) .. "'.")
+    elseif not entry.set then
+      ply:ChatPrint("[NTx] Rejected: field '" .. tostring(name) .. "' is read-only.")
+    else
+      local ok, err = pcall(entry.set, ent, value)
+      if not ok then
+        -- Previously swallowed: a setter that threw left the value unchanged and
+        -- said nothing, which looked exactly like the click never registering.
+        ply:ChatPrint("[NTx] Rejected: setting '" .. tostring(name)
+          .. "' failed: " .. tostring(err))
+      end
+    end
   end
 end
 
 net.Receive("NTx.AmpEdit", function(_, ply)
   local amp = net.ReadEntity()
-  if not IsValid(amp) or amp:GetClass() ~= "ntx_amplifier" then return end
-  if not canEdit(ply, amp) then return end
+  if not IsValid(amp) or amp:GetClass() ~= "ntx_amplifier" then
+    if IsValid(ply) then ply:ChatPrint("[NTx] Rejected: not an amplifier.") end
+    return
+  end
+  if not canEdit(ply, amp) then
+    ply:ChatPrint("[NTx] Cannot edit amplifier [" .. amp:EntIndex() .. "]: "
+      .. (editRefusal(ply, amp) or "not permitted"))
+    return
+  end
   local kind = net.ReadString()
 
   if kind == "set" then
-    applyFields("amp", amp, net.ReadUInt(5))
+    applyFields(ply, "amp", amp, net.ReadUInt(5))
   elseif kind == "spkset" then
     local spk = net.ReadEntity()
     if not IsValid(spk) or spk:GetClass() ~= "ntx_speaker" then return end
-    if not canEdit(ply, spk) then return end
-    applyFields("spk", spk, net.ReadUInt(5))
+    if not canEdit(ply, spk) then
+      ply:ChatPrint("[NTx] Cannot edit cabinet [" .. spk:EntIndex() .. "]: "
+        .. (editRefusal(ply, spk) or "not permitted"))
+      return
+    end
+    applyFields(ply, "spk", spk, net.ReadUInt(5))
   elseif kind == "cliplatch" then
     amp:SetClipLatch(false)
   elseif kind == "profile" then
