@@ -223,7 +223,7 @@ local function stepAmp(amp, now, dt)
           -- Series grouping is derived from the wire chain, not hand-set: every
           -- cabinet joined In/Out to others shares one group key, so their
           -- impedances add the way a real series pair does.
-          group = NTx.SpkSeriesKey(sp.ent), stype = spk:GetSpeakerType(),
+          group = NTx.SpkSeriesKey(spk), stype = spk:GetSpeakerType(),
           blown = spk:GetBlown(),
         }
         spkEnts[#spkEnts + 1] = spk

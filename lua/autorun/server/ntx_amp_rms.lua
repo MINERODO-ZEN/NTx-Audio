@@ -45,12 +45,22 @@ function NTx.MeasuredRms(ent)
   return r.v
 end
 
+-- Server tick interval. TICK is not dependable on the server realm - it is
+-- documented as a client-side global - and reading it at file scope would also
+-- depend on load order, so this is resolved per call with a sane fallback.
+local function tickInterval()
+  if type(TICK) == "number" and TICK > 0 then return TICK end
+  local ok, v = pcall(function() return engine.TickInterval() end)
+  if ok and type(v) == "number" and v > 0 then return v end
+  return 1 / 66
+end
+
 -- Anti-spam: a client may claim at most twice its assigned cadence, so one that
 -- ignores the assignment cannot flood the server.
 local function rateOk(ply)
   local now = CurTime()
   local last = ply.__ntxRmsAt or 0
-  if now - last < (ply.__ntxRmsEvery or TICK * 4) * 2 then return false end
+  if now - last < (ply.__ntxRmsEvery or (tickInterval() * 4)) * 2 then return false end
   ply.__ntxRmsAt = now
   return true
 end
@@ -96,11 +106,12 @@ local function setReady(ply, ready)
   -- Owner of a rig: tick rate. Otherwise quarter tick rate, but only while
   -- somebody actually owns something - otherwise there is nothing to protect
   -- the tick rate from, so everyone gets it.
+  local base = tickInterval()
   local every
   if isOwner or not anyAmpOwned() then
-    every = TICK
+    every = base
   else
-    every = TICK * 4
+    every = base * 4
   end
   if ply.__ntxRmsEvery == every then return end
   ply.__ntxRmsEvery = every
