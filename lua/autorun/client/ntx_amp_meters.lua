@@ -469,15 +469,14 @@ NTx.ReleaseAmpLedModels = function(ent)
   ledModels[ent] = nil
 end
 
--- col is the lit colour and may be nil for a dark lamp, in which case `lens`
--- (the tint PAC3 recorded) supplies the plastic colour. A dark lamp is never
--- pure black: a lens keeps its own colour when the emitter is off.
-local function ledMaterial(col, alpha, lens)
+-- col is the lamp's own colour and brightness decides how strongly it is lit.
+-- A dark lamp keeps its colour at a fraction, so an unlit red lens looks like
+-- dark red plastic rather than a black dot.
+local function ledMaterial(col, alpha)
   alpha = math.Clamp(tonumber(alpha) or 0, 0, 255)
   local r, g, b
   if alpha == 0 then
-    local base = lens or OFF
-    r, g, b = base.r * 0.42, base.g * 0.42, base.b * 0.42
+    r, g, b = col.r * 0.42, col.g * 0.42, col.b * 0.42
   else
     local f = alpha / 255
     r, g, b = col.r * f, col.g * f, col.b * f
@@ -591,13 +590,14 @@ local function drawPac3Lamps(ent, rec, lamps)
 
   for i, lamp in ipairs(lamps) do
     local model = pool[i]
-    local alpha, col = NTx.Pac3LampState(ent, lamp, rec)
-    -- Unlit lamps keep the lens tint PAC3 gave them; lit lamps take the
-    -- semantic colour so the world matches the Derma panel.
-    local base = col or lamp.lens or OFF
+    local alpha = NTx.Pac3LampState(ent, lamp, rec)
+    -- The lens colour PAC3 recorded is used lit AND unlit: these resolvers only
+    -- decide brightness, never hue. A lamp with no colour falls back to the
+    -- unlit default so it is still a visible lens rather than nothing.
+    local base = lamp.lens or OFF
     model:SetPos(ent:LocalToWorld(lamp.pos))
     model:SetAngles(ent:GetAngles() + lamp.ang)
-    render.MaterialOverride(ledMaterial(base, alpha, lamp.lens))
+    render.MaterialOverride(ledMaterial(base, alpha))
     model:DrawModel()
   end
   render.MaterialOverride()

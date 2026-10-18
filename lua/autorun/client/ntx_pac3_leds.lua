@@ -17,19 +17,11 @@ if not CLIENT then return end
 
 NTx = NTx or {}
 
-local RED = Color(240, 70, 60)
-local GREEN = Color(70, 235, 110)
-local AMBER = Color(245, 190, 60)
-local BLUE = Color(70, 150, 245)
-local DIM = Color(120, 122, 126)
-
--- Lamp kind -> state resolver. Each gets (ent, ch, rec) and returns brightness
--- 0-255 plus the lit colour, or 0 and nil for a dark lamp.
---
--- Colours come from here and never from PAC3, so a lamp means the same thing
--- on the Derma panel as it does in the world. The authored tint is only used
--- for the unlit lens, which keeps a dark red lens looking like dark plastic
--- rather than a black dot.
+-- Lamp kind -> state resolver. Each gets (ent, ch, rec) and returns a
+-- brightness from 0 to 255. Nothing here decides colour: the lens tint PAC3
+-- recorded is used for both the lit and the unlit state, so a lamp looks the
+-- same in the world as it does in the editor. These functions only answer
+-- "how bright", never "what hue".
 local KINDS = {}
 
 -- Whole-amplifier lamps.
@@ -37,18 +29,18 @@ KINDS.power = function(ent)
   if ent:GetPower() and not ent:GetBlown() then
     -- Standby breathes rather than going dark, same as the panel.
     if ent:GetStandby() then
-      return (math.floor(CurTime() * 1.5) % 2 == 0) and 90 or 0, BLUE
+      return (math.floor(CurTime() * 1.5) % 2 == 0) and 90 or 0
     end
-    return 255, BLUE
+    return 255
   end
-  return 0, nil
+  return 0
 end
 
 KINDS.fault = function(ent, ch, rec)
   local code = (rec and rec.fault) or 0
-  if code == 0 or code == 9 then return 0, nil end   -- none / standby
+  if code == 0 or code == 9 then return 0 end   -- none / standby
   local blink = (math.floor(CurTime() * 4) % 2 == 0)
-  return blink and 255 or 60, (code == 8) and DIM or RED
+  return blink and 255 or 60
 end
 
 -- Per-channel lamps. A baked row with channel 0 means the author did not put a
@@ -62,14 +54,14 @@ end
 
 KINDS.signal = function(ent, ch)
   local s = NTx.AmpLedState(ent, chOf(ch))
-  if not s then return 0, nil end
-  if s.hot then return 255, Color(170, 255, 190) end
+  if not s then return 0 end
+  if s.hot then return 255 end
   if s.on then
     local duty = math.Clamp((s.duty or 0) * 0.9 + 0.1, 0.1, 1)
     local on = (math.sin(CurTime() * 22) * 0.5 + 0.5) < duty
-    return on and 255 or 40, GREEN
+    return on and 255 or 40
   end
-  return 0, nil
+  return 0
 end
 
 -- ODEP is the amber thermal-gain-reduction lamp of the MA series.
@@ -77,26 +69,26 @@ KINDS.odep = function(ent, ch, rec)
   local rc = rec and rec.ch and rec.ch[chOf(ch)]
   local red = math.min(0, (rc and rc.gainred) or 0)
   local lim = math.Clamp(-red / 8, 0, 1)
-  return lim > 0.02 and (90 + lim * 165) or 0, AMBER
+  return lim > 0.02 and (90 + lim * 165) or 0
 end
 
 KINDS.clip = function(ent, ch, rec)
   local c = chOf(ch)
   local rc = rec and rec.ch and rec.ch[c]
   local s = NTx.AmpLedState(ent, c)
-  return ((rc and rc.clip) or (s and s.hot)) and 255 or 0, RED
+  return ((rc and rc.clip) or (s and s.hot)) and 255 or 0
 end
 
 -- "protect" lights when the channel is protecting OR the output device is hot,
 -- which is how the CDi-style lamp behaves.
 KINDS.protect = function(ent, ch, rec)
   local rc = rec and rec.ch and rec.ch[chOf(ch)]
-  if ent:GetTempDev() >= 80 or (rc and rc.protect) then return 255, RED end
-  return 0, nil
+  if ent:GetTempDev() >= 80 or (rc and rc.protect) then return 255 end
+  return 0
 end
 
 KINDS.temp = function(ent)
-  return ent:GetTempDev() >= 80 and 255 or 0, RED
+  return ent:GetTempDev() >= 80 and 255 or 0
 end
 
 -- ------------------------------------------------------------ lookup
@@ -150,13 +142,14 @@ function NTx.ReloadPac3Lamps()
   cache = {}
 end
 
--- Evaluate one lamp for this frame.
+-- Evaluate one lamp for this frame: returns brightness 0-255 only. The colour
+-- is whatever PAC3 recorded, so nothing here picks a hue.
 function NTx.Pac3LampState(ent, lamp, rec)
   local fn = KINDS[lamp.kind]
-  if not fn then return 0, nil end
-  local ok, alpha, col = pcall(fn, ent, lamp.ch, rec)
-  if not ok then return 0, nil end
-  return alpha or 0, col
+  if not fn then return 0 end
+  local ok, alpha = pcall(fn, ent, lamp.ch, rec)
+  if not ok then return 0 end
+  return alpha or 0
 end
 
 concommand.Add("ntx_leds_reload", function()
