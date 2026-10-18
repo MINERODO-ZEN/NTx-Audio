@@ -52,16 +52,15 @@ local function chOf(ch)
   return n > 0 and n or 1
 end
 
+-- The signal lamp brightens with the level instead of blinking at it. s.duty
+-- ramps 0 at -40 dBu to 1 at 0 dBu, so the lamp fades up with the programme
+-- rather than strobing at a fixed rate that has nothing to do with it.
 KINDS.signal = function(ent, ch)
   local s = NTx.AmpLedState(ent, chOf(ch))
   if not s then return 0 end
+  -- Clip hold stays a full-brightness flash, which is what the lamp is for.
   if s.hot then return 255 end
-  if s.on then
-    local duty = math.Clamp((s.duty or 0) * 0.9 + 0.1, 0.1, 1)
-    local on = (math.sin(CurTime() * 22) * 0.5 + 0.5) < duty
-    return on and 255 or 40
-  end
-  return 0
+  return math.Clamp(math.floor((tonumber(s.duty) or 0) * 255), 0, 255)
 end
 
 -- ODEP is the amber thermal-gain-reduction lamp of the MA series.

@@ -248,9 +248,10 @@ function NTx.AmpLedThink()
       if not s then s = { on = 0, holdUntil = 0, phase = 0 } NTx.AmpLeds[ledKey(ent, ch)] = s end
       if c.clip then s.holdUntil = now + hold end
       local meter = NTx.AmpChannelMeter(ent, ch)
-      -- Crown's IOC lamp flashes in step with the signal it is showing. The
-      -- brighter the signal, the longer it stays lit, so a hot channel reads
-      -- as steady rather than as a strobe.
+      -- Signal level as 0-1, ramping from -40 dBu to 0 dBu. Consumers drive
+      -- lamp brightness from this, so a lamp fades with the programme instead
+      -- of blinking at a rate unrelated to it. Clipping is a separate flag so
+      -- a lamp can hold full brightness for a moment after a clip burst.
       local over = math.Clamp((meter.linDb + 40) / 40, 0, 1)
       s.on = (now < s.holdUntil) and 1 or (over > 0.05 and 1 or 0)
       s.hot = (now < s.holdUntil)
@@ -301,13 +302,10 @@ local function iocLamp(s, x, y)
   if s.hot then
     -- Clipping: bright and held, which is exactly what the IOC lamp is for.
     led(x, y, Color(170, 255, 190), 255, LED_R + 1)
-  elseif s.on then
-    -- Blink in step with the programme: duty cycle follows the level.
-    local duty = math.Clamp((s.duty or 0) * 0.9 + 0.1, 0.1, 1)
-    local on = (math.sin(CurTime() * 22) * 0.5 + 0.5) < duty
-    led(x, y, GREEN, on and 255 or 40)
   else
-    led(x, y, GREEN, 0)
+    -- Brightness follows the level. s.duty ramps 0 at -40 dBu to 1 at 0 dBu,
+    -- so the lamp fades up with the programme.
+    led(x, y, GREEN, math.Clamp(math.floor((s.duty or 0) * 255), 0, 255))
   end
 end
 
