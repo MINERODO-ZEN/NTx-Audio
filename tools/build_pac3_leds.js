@@ -85,6 +85,11 @@ function parseFile(file) {
               pos: lit(f.Position) || [0, 0, 0],
               ang: lit(f.Angles) || [0, 0, 0],
               col: lit(f.Color) || [0, 0, 0],
+              // PAC3 model2 entries may carry a Scale (a Vector, xyz). Not
+              // every file has it - testing.txt does not - so this stays
+              // optional and the game falls back to a size derived from the
+              // chassis. Only x is meaningful for a lamp.
+              scale: lit(f.Scale) ? lit(f.Scale)[0] : null,
             });
           }
         } else {
@@ -144,10 +149,11 @@ for (const f of files) {
   const rows = lamps
     .map(
       (l) =>
-        `    { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ` +
+        `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ` +
         `${num(l.pos[0])}, ${num(l.pos[1])}, ${num(l.pos[2])}, ` +
         `${num(l.ang[0])}, ${num(l.ang[1])}, ${num(l.ang[2])}, ` +
-        `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)} },`
+        `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)}, ` +
+        `${l.scale === null || l.scale === undefined ? 0 : num(l.scale)} },`
     )
     .join('\n');
 
@@ -171,7 +177,8 @@ function emitTable(t) {
           `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ` +
           `${num(l.pos[0])}, ${num(l.pos[1])}, ${num(l.pos[2])}, ` +
           `${num(l.ang[0])}, ${num(l.ang[1])}, ${num(l.ang[2])}, ` +
-          `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)} },`
+          `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)}, ` +
+          `${l.scale === null || l.scale === undefined ? 0 : num(l.scale)} },`
       )
       .join('\n');
     return `    [${q(k)}] = {\n${rows}\n    },`;
@@ -190,6 +197,8 @@ const out = `-- GENERATED FILE - DO NOT EDIT BY HAND.
 --   3,4,5 position   model space, x y z
 --   6,7,8 rotation   degrees, pitch yaw roll
 --   9,10,11 lens tint 0-255, used only while the lamp is dark
+--   12 size multiplier from PAC3's Scale, 0 when the file records none and the
+--      game should derive the diameter from the chassis instead
 NTx = NTx or {}
 
 -- Two lookup keys. The game tries byProfile[profile id] first and falls back

@@ -428,14 +428,30 @@ end
 local LED_NATIVE = 1.37      -- models/led.mdl bounding size, in model units
 local LED_PX = 12            -- target lamp diameter, in virtual panel pixels
 local LED_LIFT = 0.5         -- how far the domes sit off the chassis face
--- PAC3 layouts carry a position but no diameter, so lamps there are drawn at
--- a fixed fraction of the led.mdl native size. Close enough to the authored
--- dome on a rack chassis, and it cannot drift with the chassis dimensions the
--- way the panel layout does.
-local PAC3_LED_SCALE = 0.05
 
 local ledModels = {}         -- amp entity -> its cached ClientsideModel
 local ledMats = {}           -- quantised colour -> material
+
+-- PAC3 records a position but not always a size, so a lamp's diameter is derived
+-- from the chassis instead: a fraction of the model width, which keeps a lamp
+-- looking like a lamp on a 19" rack and on a small desktop box alike. Baking a
+-- fixed scale (which is what this used to do) made the lamps ~5x too small on a
+-- full-width amplifier. An authored Scale, when the file has one, multiplies it.
+local function pac3LampDiameter(ent, lamps)
+  local mn, mx = ent:GetModelBounds()
+  local w = (mx and mn) and (mx.y - mn.y) or 8
+  local d = math.Clamp(w / 64, 0.04, 0.6)
+  -- Every lamp in a layout shares one cached model, so the authored scale can
+  -- only be honoured when the file agrees across them.
+  local mul
+  for _, lamp in ipairs(lamps or {}) do
+    if lamp.scale then
+      mul = mul or lamp.scale
+      if mul ~= lamp.scale then mul = nil break end
+    end
+  end
+  return d * (tonumber(mul) or 1)
+end
 
 -- col is the lit colour and may be nil for a dark lamp, in which case `lens`
 -- (the tint PAC3 recorded) supplies the plastic colour. A dark lamp is never
@@ -445,8 +461,9 @@ local function ledMaterial(col, alpha, lens)
   local r, g, b
   if alpha == 0 then
     local base = lens or OFF
-    -- Off lamps read as dark tinted plastic, not as their lit colour.
-    r, g, b = base.r * 0.28, base.g * 0.28, base.b * 0.28
+    -- Off lamps read as dark tinted plastic, not as their lit colour. Too dark
+    -- and a panel with nothing playing on it looks like it has no lamps at all.
+    r, g, b = base.r * 0.42, base.g * 0.42, base.b * 0.42
   else
     local f = alpha / 255
     r, g, b = col.r * f, col.g * f, col.b * f
@@ -550,6 +567,8 @@ local function pac3LampsFor(ent)
 end
 
 local function drawPac3Lamps(ent, rec, lamps)
+  if NTx.Pac3CheckBounds then NTx.Pac3CheckBounds(ent, lamps) end
+
   local model = ledModels[ent]
   if not IsValid(model) then
     model = ClientsideModel("models/led.mdl", RENDERGROUP_OTHER)
@@ -557,19 +576,24 @@ local function drawPac3Lamps(ent, rec, lamps)
     model:SetNoDraw(true)
     ledModels[ent] = model
   end
+
+  local diam = pac3LampDiameter(ent, lamps)
+  model:SetModelScale(diam / LED_NATIVE, 0)
+
+  -- Nudge each dome out along the model's +X, which is the front face on these
+  -- chassis. Without it a lamp authored flush with the panel surface is drawn
+  -- half-buried inside the solid mesh and simply is not visible.
+  local lift = diam * 0.55
+
   for _, lamp in ipairs(lamps) do
     local alpha, col = NTx.Pac3LampState(ent, lamp, rec)
     -- Unlit lamps keep the lens tint PAC3 gave them; lit lamps take the
     -- semantic colour so the world matches the Derma panel.
     local base = col or lamp.lens or OFF
-    -- A PAC3 position is model space, so the chassis transform does the work
-    -- the virtual-panel arithmetic used to do.
-    model:SetPos(ent:LocalToWorld(lamp.pos))
+    local p = lamp.pos + Vector(lift, 0, 0)
+    model:SetPos(ent:LocalToWorld(p))
     model:SetAngles(ent:GetAngles() + lamp.ang)
-    -- Scale from the model itself rather than a panel constant: PAC3 does not
-    -- record a diameter, so match the native led.mdl at a fixed size.
-    model:SetModelScale(PAC3_LED_SCALE, 0)
-    render.MaterialOverride(ledMaterial(base, alpha))
+    render.MaterialOverride(ledMaterial(base, alpha, lamp.lens))
     model:DrawModel()
   end
   render.MaterialOverride()

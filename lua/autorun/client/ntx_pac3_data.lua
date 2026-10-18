@@ -9,6 +9,8 @@
 --   3,4,5 position   model space, x y z
 --   6,7,8 rotation   degrees, pitch yaw roll
 --   9,10,11 lens tint 0-255, used only while the lamp is dark
+--   12 size multiplier from PAC3's Scale, 0 when the file records none and the
+--      game should derive the diameter from the chassis instead
 NTx = NTx or {}
 
 -- Two lookup keys. The game tries byProfile[profile id] first and falls back
@@ -17,18 +19,18 @@ NTx = NTx or {}
 NTx.PAC3_LEDS = {
   byModel = {
     ["models/props_lab/reciever01b.mdl"] = {
-      { "signal", 1, 6.3514, 0.003, 2.073, 90, 0, 0, 0, 255, 63 },
-      { "signal", 2, 6.3514, 3.8412, 2.073, 90, 0, 0, 0, 255, 63 },
-      { "protect", 1, 6.3514, 1.2541, 2.073, 90, 0, 0, 255, 0, 0 },
-      { "protect", 2, 6.3514, 2.591, 2.073, 90, 0, 0, 255, 0, 0 },
+      { "signal", 1, 6.3514, 0.003, 2.073, 90, 0, 0, 0, 255, 63, 0 },
+      { "signal", 2, 6.3514, 3.8412, 2.073, 90, 0, 0, 0, 255, 63, 0 },
+      { "protect", 1, 6.3514, 1.2541, 2.073, 90, 0, 0, 255, 0, 0, 0 },
+      { "protect", 2, 6.3514, 2.591, 2.073, 90, 0, 0, 255, 0, 0, 0 },
     },
   },
   byProfile = {
     ["testing"] = {
-      { "signal", 1, 6.3514, 0.003, 2.073, 90, 0, 0, 0, 255, 63 },
-      { "signal", 2, 6.3514, 3.8412, 2.073, 90, 0, 0, 0, 255, 63 },
-      { "protect", 1, 6.3514, 1.2541, 2.073, 90, 0, 0, 255, 0, 0 },
-      { "protect", 2, 6.3514, 2.591, 2.073, 90, 0, 0, 255, 0, 0 },
+      { "signal", 1, 6.3514, 0.003, 2.073, 90, 0, 0, 0, 255, 63, 0 },
+      { "signal", 2, 6.3514, 3.8412, 2.073, 90, 0, 0, 0, 255, 63, 0 },
+      { "protect", 1, 6.3514, 1.2541, 2.073, 90, 0, 0, 255, 0, 0, 0 },
+      { "protect", 2, 6.3514, 2.591, 2.073, 90, 0, 0, 255, 0, 0, 0 },
     },
   },
 }

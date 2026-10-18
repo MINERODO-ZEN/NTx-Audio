@@ -101,7 +101,7 @@ end
 local cache = {}
 
 -- Row layout matches the generated file:
---   kind, ch, px, py, pz, ap, ay, ar, lr, lg, lb
+--   kind, ch, px, py, pz, ap, ay, ar, lr, lg, lb, scaleMul
 local function decode(row)
   local kind, ch = row[1], row[2]
   return {
@@ -110,7 +110,39 @@ local function decode(row)
     pos = Vector(row[3], row[4], row[5]),
     ang = Angle(row[6], row[7], row[8]),
     lens = Color(row[9] or 0, row[10] or 0, row[11] or 0),
+    -- 0 means the PAC3 file recorded no Scale, so the diameter comes from the
+    -- chassis instead of from the authored value.
+    scale = (tonumber(row[12]) or 0) > 0 and tonumber(row[12]) or nil,
   }
+end
+
+-- One-off sanity check per chassis. If a lamp sits outside the model's own
+-- bounds the two tools disagree about where the model origin is - PAC3 and GMod
+-- read the same .mdl but do not always place its pivot identically - and every
+-- lamp will render in the wrong place. Saying so once is far cheaper than
+-- guessing at lamp positions from screenshots.
+local originWarned = {}
+local function warnIfOutsideBounds(ent, lamps)
+  local key = ent:GetModel()
+  if originWarned[key] then return end
+  local mn, mx = ent:GetModelBounds()
+  if not mn or not mx then return end
+  -- A little slack: a lamp legitimately authored just proud of the face is
+  -- still inside, so only a clear excursion counts.
+  local pad = Vector(2, 2, 2)
+  for _, lamp in ipairs(lamps) do
+    if lamp.pos.x < mn.x - pad.x or lamp.pos.x > mx.x + pad.x
+      or lamp.pos.y < mn.y - pad.y or lamp.pos.y > mx.y + pad.y
+      or lamp.pos.z < mn.z - pad.z or lamp.pos.z > mx.z + pad.z then
+      originWarned[key] = true
+      print(string.format(
+        "[NTx] PAC3 lamp %q on %s is outside the model bounds (model %s..%s). "
+        .. "PAC3 and GMod disagree about the model origin, so the lamps will "
+        .. "render in the wrong place.", tostring(lamp.kind), key,
+        tostring(mn), tostring(mx)))
+      return
+    end
+  end
 end
 
 function NTx.Pac3Lamps(ent)
@@ -147,6 +179,8 @@ function NTx.ReloadPac3Lamps()
   cache = {}
 end
 
+NTx.Pac3CheckBounds = warnIfOutsideBounds
+
 -- Evaluate one lamp for this frame.
 function NTx.Pac3LampState(ent, lamp, rec)
   local fn = KINDS[lamp.kind]
@@ -169,4 +203,33 @@ concommand.Add("ntx_leds_reload", function()
     "[NTx] baked lamp layouts: %d profile(s) [%s], %d model(s) [%s]",
     #profiles, table.concat(profiles, ", "),
     #models, table.concat(models, ", ")))
+end)
+-- Reports the baked layout and where it lands on a chosen amplifier. The lamp
+-- size and placement were both wrong once already, and the failure mode
+-- (nothing visible) gives no clue which, so this prints the numbers instead.
+concommand.Add("ntx_leds_debug", function(_, _, args)
+  local target
+  for _, e in ipairs(ents.FindByClass("ntx_amplifier")) do
+    if IsValid(e) and (not IsValid(target) or e:EntIndex() < target:EntIndex()) then target = e end
+  end
+  if args[1] then target = Entity(tonumber(args[1])) end
+  if not IsValid(target) then print("[NTx] no amplifier found") return end
+
+  local lamps = NTx.Pac3Lamps(target)
+  local mn, mx = target:GetModelBounds()
+  print(string.format("[NTx] amplifier %d profile=%q model=%s", target:EntIndex(),
+    tostring(target:GetProfile()), tostring(target:GetModel())))
+  print(string.format("    bounds  %s .. %s", tostring(mn), tostring(mx)))
+  print(string.format("    lamps   %s", lamps and #lamps or 0))
+  if not lamps or #lamps == 0 then
+    print("    -> falling back to the built-in panel layout")
+    return
+  end
+  for i, lamp in ipairs(lamps) do
+    local world = target:LocalToWorld(lamp.pos)
+    print(string.format("    [%d] %-8s ch%s pos=%s ang=%s lens=%s scale=%s world=%s",
+      i, tostring(lamp.kind), tostring(lamp.ch), tostring(lamp.pos), tostring(lamp.ang),
+      tostring(lamp.lens), tostring(lamp.scale), tostring(world)))
+  end
+  NTx.Pac3CheckBounds(target, lamps)
 end)
