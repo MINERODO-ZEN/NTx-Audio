@@ -52,9 +52,12 @@ KINDS.fault = function(ent, ch, rec)
 end
 
 -- Per-channel lamps. A baked row with channel 0 means the author did not put a
--- number on the lamp name, so it is treated as channel 1.
+-- number on the lamp name, so it is treated as channel 1. Note that 0 is truthy
+-- in Lua, so this cannot be written as `tonumber(ch) or 1` - that would hand
+-- back 0 and the lamp would look up a channel that does not exist.
 local function chOf(ch)
-  return tonumber(ch) or 1
+  local n = tonumber(ch) or 1
+  return n > 0 and n or 1
 end
 
 KINDS.signal = function(ent, ch)
