@@ -232,6 +232,36 @@ local function rebuild()
   end
   for _, e in ipairs(inputs) do if IsValid(e) then patchInto(e, "Buses") end end
 
+  -- Mixer channels, derived from the wiring.
+  --
+  -- A mixer used to learn its channels from the panel, where patching a source
+  -- in created one. With the wire tool the wires are the only record that a
+  -- source is attached, so nothing built this list: every bus summed an empty
+  -- set and published [0, id], so the amplifier was told the right bus and a
+  -- silent level. The wires looked completely healthy, which is what made this
+  -- hard to see.
+  for _, mx in ipairs(mixers) do
+    if IsValid(mx) and mx.EnsureChannel then
+      local live, wired = {}, false
+      for i = 1, (NTx.WIRE_MAX_MIX_CH or 16) do
+        local src = NTx.WireUpstream(mx, "In" .. i)
+        if IsValid(src) then
+          wired = true
+          live[src] = true
+          mx:EnsureChannel(src)
+        end
+      end
+      -- Prune only a mixer that is actually driven by wires. One on the legacy
+      -- link path has nothing wired to its In ports, and must keep the channels
+      -- its panel built.
+      if wired then
+        for _, ch in ipairs(mx.Channels or {}) do
+          if not live[ch.Input] then mx:RemoveChannel(ch.Input) end
+        end
+      end
+    end
+  end
+
   -- A fallback bus is a SINK, so its mixer comes from whatever feeds its "In",
   -- not from anything downstream of its "Out". Resolving it the other way round
   -- left the BASS path unable to pair a fallback with its mixer, which is the
