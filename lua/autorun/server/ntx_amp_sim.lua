@@ -614,6 +614,9 @@ hook.Add("Think", "NTx.AmpSim", function()
   end
   stepSpeakers(now, dt)
   if NTx.BroadcastAmpSync then NTx.BroadcastAmpSync() end
+  -- The meters read their levels from here rather than out of AmpSync, so they
+  -- are not held to that message's 10 Hz cap.
+  if NTx.BroadcastAmpMeters then NTx.BroadcastAmpMeters() end
 end)
 
 -- Fault injection for testing: the tool and ntx_amp_fault drive this, and

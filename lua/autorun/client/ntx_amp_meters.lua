@@ -236,8 +236,10 @@ end
 -- Exposed (not just a hook) because a fresh AmpSync can land between ticks and
 -- the LEDs should not wait up to 100 ms to show it.
 function NTx.AmpLedThink()
-  if CurTime() < (NTx.NextAmpLed or 0) then return end
-  NTx.NextAmpLed = CurTime() + 0.1
+  -- Every frame now. The levels themselves arrive on NTx.AmpMeters at
+  -- ntx_meter_hz; holding the lamps to 10 Hz as well meant animating fresh
+  -- data at a tenth of the rate it arrived, which looked like a slow meter
+  -- even once the message was fast.
   local now = CurTime()
   for _, rec in pairs(NTx.Amps) do
     local ent = rec.ent
@@ -703,3 +705,41 @@ function NTx.AmpExtras(ent, isHost)
     fan = { db = rec.fanDb or -120, rpm = rec.fanrpm or 0 },
   }
 end
+-- ------------------------------------------------------- fast meter path
+--
+-- Levels arrive on their own message at ntx_meter_hz rather than inside the
+-- 10 Hz NTx.AmpSync, so the meters and lamps can move at tick rate. Applied
+-- over the top of the existing record: AmpSync still fills everything that
+-- does not change quickly, this only overwrites the parts that do.
+net.Receive("NTx.AmpMeters", function()
+  local count = net.ReadUInt(6)
+  for _ = 1, count do
+    local ent = net.ReadEntity()
+    local usable = net.ReadUInt(3)
+    if IsValid(ent) then
+      local rec = NTx.Amps[ent:EntIndex()]
+      if rec then
+        for i = 1, usable do
+          local db = (net.ReadUInt(16) / 20) - 130
+          local clip = net.ReadBool()
+          local protect = net.ReadBool()
+          local c = rec.ch[i]
+          if not c then c = {} rec.ch[i] = c end
+          c.linDb = db
+          c.clip = clip
+          c.protect = protect
+        end
+      else
+        -- No AmpSync record yet: the values are still consumed so the read
+        -- position stays in step, they simply have nowhere to land.
+        for i = 1, usable do
+          net.ReadUInt(16); net.ReadBool(); net.ReadBool()
+        end
+      end
+    else
+      -- An entity that is gone: the stream has no channel count to skip by, so
+      -- bail rather than desynchronise the whole message.
+      return
+    end
+  end
+end)
