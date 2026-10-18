@@ -55,6 +55,24 @@ local function rateOk(ply)
   return true
 end
 
+-- Does anyone own an amplifier at all?
+--
+-- An amplifier with no CPPI owner is the normal case on a server where rigs are
+-- public, and then NOBODY qualifies for the faster cadence - the owner ran off,
+-- or the rig was spawned from console. The result was the person actually
+-- watching the rig silently getting quarter rate. So when no player owns an
+-- amplifier, the throttle has no purpose and everyone with WebAudio reports at
+-- tick rate.
+local function anyAmpOwned()
+  for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
+    if IsValid(amp) then
+      local owner = amp.CPPIGetOwner and amp:CPPIGetOwner() or NULL
+      if IsValid(owner) then return true end
+    end
+  end
+  return false
+end
+
 -- Does this player own an amplifier? That is what earns them the faster cadence.
 local function ownsAnAmp(ply)
   for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
@@ -75,12 +93,23 @@ local function setReady(ply, ready)
   end
   local isOwner = ownsAnAmp(ply)
   ply.__ntxRmsOwner = isOwner
-  local every = isOwner and TICK or (TICK * 4)
+  -- Owner of a rig: tick rate. Otherwise quarter tick rate, but only while
+  -- somebody actually owns something - otherwise there is nothing to protect
+  -- the tick rate from, so everyone gets it.
+  local every
+  if isOwner or not anyAmpOwned() then
+    every = TICK
+  else
+    every = TICK * 4
+  end
   if ply.__ntxRmsEvery == every then return end
   ply.__ntxRmsEvery = every
   net.Start("NTx.AmpRmsCadence")
   net.WriteFloat(every)
   net.Send(ply)
+  print(string.format("[NTx] %s will report measured levels every %.4fs (%s).",
+    ply:Nick(), every,
+    isOwner and "owns an amplifier" or (anyAmpOwned() and "no amplifier" or "no amplifier is owned")))
 end
 
 -- The client says whether it currently has a working audio page, so the server
@@ -125,13 +154,22 @@ hook.Add("PlayerInitialSpawn", "NTx.AmpRmsSpawn", function(ply)
   end)
 end)
 
--- Ownership can change mid-session, so the cadence is re-evaluated on a timer as
--- well as on announce.
+-- Ownership can change mid-session, and so can whether ANY amplifier is owned,
+-- so the cadence is re-evaluated on a timer as well as on announce.
 timer.Create("NTx.RmsCadenceWatch", 2, 0, function()
+  local owned = anyAmpOwned()
+  if owned ~= NTx.__ntxAnyAmpOwned then
+    NTx.__ntxAnyAmpOwned = owned
+  end
   for _, ply in ipairs(player.GetAll()) do
     if IsValid(ply) and ply.__ntxRmsReady then
       local isOwner = ownsAnAmp(ply)
-      if ply.__ntxRmsOwner ~= isOwner then setReady(ply, true) end
+      -- Reassign whenever this player's ownership changed, or whenever the
+      -- "is anything owned" state flipped underneath everyone.
+      if ply.__ntxRmsOwner ~= isOwner or ply.__ntxRmsOwnedAny ~= owned then
+        ply.__ntxRmsOwnedAny = owned
+        setReady(ply, true)
+      end
     end
   end
 end)
