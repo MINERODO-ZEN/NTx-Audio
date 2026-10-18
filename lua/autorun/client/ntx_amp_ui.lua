@@ -18,6 +18,29 @@ local COL_OK = Color(120, 220, 150)
 
 local openPanel = nil
 
+-- GLua's DComboBox has no Select(): the wiki's ChooseOptionID takes the option
+-- index, and every combo here identifies its current value by choice data (a
+-- profile id, a bus flag, an entity), so the data -> index map is kept by hand.
+local function comboAdd(combo, text, data)
+  combo:AddChoice(text, data)
+  combo._dataIndex = combo._dataIndex or {}
+  combo._dataIndex[tostring(data)] = table.Count(combo._dataIndex) + 1
+end
+
+local function comboPick(combo, data)
+  local idx = combo._dataIndex and combo._dataIndex[tostring(data)]
+  if idx then combo:ChooseOptionID(idx) end
+end
+
+local function row(parent, h)
+  local r = vgui.Create("DPanel", parent)
+  r:Dock(TOP)
+  r:SetTall(h or 26)
+  r:DockMargin(4, 2, 4, 0)
+  r:SetPaintBackground(false)
+  return r
+end
+
 local function label(parent, txt, col, tall)
   local lbl = vgui.Create("DLabel", parent)
   lbl:SetText(txt)
@@ -90,15 +113,6 @@ local function sendAmpKind(amp, kind, extra)
   net.SendToServer()
 end
 
-local function row(parent, h)
-  local r = vgui.Create("DPanel", parent)
-  r:Dock(TOP)
-  r:SetTall(h or 26)
-  r:DockMargin(4, 2, 4, 0)
-  r:SetPaintBackground(false)
-  return r
-end
-
 -- ------------------------------------------------------------ amp settings
 
 -- ------------------------------------------------------------ amplifier UI
@@ -146,8 +160,8 @@ function NTx.OpenAmpUI(amp)
   plbl:Dock(LEFT)
   local combo = vgui.Create("DComboBox", prow)
   combo:Dock(FILL)
-  for _, id in ipairs(NTx.AmpProfileIds()) do combo:AddChoice(NTx.AmpProfile(id).name, id) end
-  combo:Select(amp:GetProfile())
+  for _, id in ipairs(NTx.AmpProfileIds()) do comboAdd(combo, NTx.AmpProfile(id).name, id) end
+  comboPick(combo, amp:GetProfile())
   combo.OnSelect = function(_, _, data)
     sendAmpKind(amp, "profile", function() net.WriteString(tostring(data or "")) end)
   end
@@ -232,9 +246,9 @@ function NTx.OpenAmpUI(amp)
     local bus = vgui.Create("DComboBox", cr)
     bus:SetWide(70)
     bus:Dock(LEFT)
-    bus:AddChoice("MID", 0)
-    bus:AddChoice("SUB", 1)
-    bus:Select(amp:ChannelIsSub(ch) and 1 or 0)
+    comboAdd(bus, "MID", 0)
+    comboAdd(bus, "SUB", 1)
+    comboPick(bus, amp:ChannelIsSub(ch) and 1 or 0)
     bus.OnSelect = function(_, _, data)
       local mask = amp:GetBusMask()
       -- Named bitv, not bit: a local called bit would shadow the library the
@@ -325,8 +339,8 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
     lbl:Dock(LEFT)
     local bus = vgui.Create("DComboBox", cr)
     bus:Dock(FILL)
-    bus:AddChoice("MID cabinets", 0)
-    bus:AddChoice("SUB cabinets", 1)
+    comboAdd(bus, "MID cabinets", 0)
+    comboAdd(bus, "SUB cabinets", 1)
     -- Pre-select from whatever is already patched, which is right most of the
     -- time and is a starting point rather than a decision.
     local guess = amp:ChannelIsSub(ch) and 1 or 0
@@ -337,7 +351,7 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
         break
       end
     end
-    bus:Select(guess)
+    comboPick(bus, guess)
     combos[ch] = bus
   end
 
@@ -354,9 +368,9 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
   local modeNames = { [0] = "Dual (stereo)", [1] = "Bridge-mono", [2] = "Parallel-mono" }
   local offered = prof and prof.modes or { "dual" }
   for i, name in ipairs({ "dual", "bridge", "parallel" }) do
-    if offered[name] then mode:AddChoice(modeNames[i], i - 1) end
+    if offered[name] then comboAdd(mode, modeNames[i], i - 1) end
   end
-  mode:Select(math.Clamp(amp:GetMode(), 0, 2))
+  comboPick(mode, math.Clamp(amp:GetMode(), 0, 2))
 
   local hrow = row(scroll, 28)
   local hizLbl = label(hrow, "Output tap")
@@ -365,12 +379,12 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
   local hiz = vgui.Create("DComboBox", hrow)
   hiz:Dock(LEFT)
   hiz:SetWide(150)
-  hiz:AddChoice("low-Z (4/8 ohm)", 0)
+  comboAdd(hiz, "low-Z (4/8 ohm)", 0)
   if prof and prof.hiz then
-    hiz:AddChoice("70 V constant voltage", 70)
-    hiz:AddChoice("100 V constant voltage", 100)
+    comboAdd(hiz, "70 V constant voltage", 70)
+    comboAdd(hiz, "100 V constant voltage", 100)
   end
-  hiz:Select(amp:GetHizVolt())
+  comboPick(hiz, amp:GetHizVolt())
 
   label(scroll, "Cabs on the wrong bus after patching are unlinked, not silently moved.", COL_DIM, 18):Dock(TOP)
 
@@ -411,9 +425,9 @@ function NTx.OpenCabinetUI(spk)
   local combo = vgui.Create("DComboBox", prow)
   combo:Dock(FILL)
   for _, p in ipairs(NTx.AllSpeakerProfiles()) do
-    combo:AddChoice(p.name .. (p.saved and " *" or ""), p.id)
+    comboAdd(combo, p.name .. (p.saved and " *" or ""), p.id)
   end
-  combo:Select(spk:GetProfile())
+  comboPick(combo, spk:GetProfile())
   combo.OnSelect = function(_, _, data)
     net.Start("NTx.SpkProfile")
     net.WriteString("apply")
@@ -448,12 +462,12 @@ function NTx.OpenCabinetUI(spk)
   ampLbl:Dock(LEFT)
   local ac = vgui.Create("DComboBox", lrow)
   ac:Dock(FILL)
-  ac:AddChoice("(none - driven off the mixer)", NULL)
+  comboAdd(ac, "(none - driven off the mixer)", NULL)
   for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
-    if IsValid(amp) then ac:AddChoice("amp " .. amp:EntIndex() .. " (" .. amp:GetProfile() .. ")", amp) end
+    if IsValid(amp) then comboAdd(ac, "amp " .. amp:EntIndex() .. " (" .. amp:GetProfile() .. ")", amp) end
   end
   local cur = spk:GetAmp()
-  ac:Select(IsValid(cur) and cur or NULL)
+  comboPick(ac, IsValid(cur) and cur or NULL)
   ac.OnSelect = function(_, _, data)
     local amp = data
     if not IsValid(amp) then
