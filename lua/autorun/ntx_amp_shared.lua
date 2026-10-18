@@ -636,12 +636,15 @@ end
 
 -- The shift state of a tool click.
 --
--- This has to be answered by the CLIENT: Player:KeyDown is explicitly not
--- networked ("only the local client can see the keys they are pressing"), and
--- TOOL:LeftClick runs on the server, where every KeyDown reads false. So the
--- client mirrors its own modifier keys into a networked int, and the server
--- reads that. An int bitmask rather than one bool per key, so a future modifier
--- costs nothing.
+-- Player:KeyDown is documented as "not networked... only the local client can
+-- see the keys they are pressing", but Advanced Duplicator 2 reads
+-- ply:KeyDown(IN_SPEED) inside TOOL:RightClick - which also runs on the server -
+-- and that works. The key state reaches the server with the owning player's
+-- usercmd, so it is this player's own keys we read, which is all we need.
+--
+-- The client mirror below is belt and braces: it cannot disagree with the local
+-- input, and it covers the case where the usercmd for the click frame has not
+-- caught up with the key press yet.
 local function modMask()
   if input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT) then return 1 end
   return 0
@@ -658,10 +661,8 @@ end
 
 function NTx.ToolShift(ply)
   if not IsValid(ply) then return false end
-  -- Server side: the client's mirrored bitmask. The KeyDown fallback is for the
-  -- singleplayer/listen case where both realms answer for the same player.
-  local mask = ply:GetNWInt("NtxMods", 0)
-  if mask > 0 then return true end
+  -- The client's own answer first, then the owning player's key state.
+  if ply:GetNWInt("NtxMods", 0) > 0 then return true end
   return ply:KeyDown(KEY_LSHIFT) or ply:KeyDown(KEY_RSHIFT)
 end
 

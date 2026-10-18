@@ -214,16 +214,42 @@ function NTx.ToolLinkClick(ply, ent)
   local src = ply:GetNWEntity("NtxSrc")
 
   -- Amplifier as the destination: either a cabinet -> amplifier link, or a
-  -- mixer, which opens the per-channel bus picker. What each output drives
-  -- decides which bus the amplifier reads for its level, so that choice has to
-  -- be made by the player.
+  -- mixer. A plain click LINKS; it never opens a dialog, because a link that
+  -- stops to ask a question is indistinguishable from the link being broken.
+  -- The bus-per-output picker is a shift-click away and stays there.
   if cls == "ntx_amplifier" and IsValid(src) and src ~= ent then
     if src:GetClass() == "ntx_mixer" then
       if not canEdit(ply, ent) then
         ply:ChatPrint("[NTx] You do not own that amplifier.")
         return true
       end
-      ply:ConCommand("ntx_amp_patch " .. ent:EntIndex() .. " " .. src:EntIndex())
+      if NTx.ToolShift(ply) then
+        ply:ConCommand("ntx_amp_patch " .. ent:EntIndex() .. " " .. src:EntIndex())
+        ply:SetNWEntity("NtxSrc", NULL)
+        return true
+      end
+      -- Plain link: keep whatever the amplifier is already patched to. A
+      -- channel that was MID and is now SUB cannot keep its full-range boxes,
+      -- so those cabinets are unlinked rather than silently left fighting the
+      -- bus - the same rule the patch panel applies.
+      ent:SetMixer(src)
+      NTx.AmpSimDrop(ent)
+      local dropped = 0
+      for _, spk in ipairs(ents.FindByClass("ntx_speaker")) do
+        if IsValid(spk) and spk:GetAmp() == ent then
+          local ch = math.Clamp(math.floor(tonumber(spk:GetAmpChannel()) or 0), 1, 8)
+          local pair = ent:ChannelPair(ch)
+          if (spk:BusType() == "sub") ~= ent:ChannelIsSub(pair[1]) then
+            spk:SetAmp(NULL)
+            spk:SetAmpChannel(0)
+            dropped = dropped + 1
+          end
+        end
+      end
+      NTx.BroadcastGraph()
+      ply:ChatPrint("[NTx] Amplifier " .. ent:EntIndex() .. " -> mixer " .. src:EntIndex()
+        .. " (kept its buses and mode; shift-click to change them)"
+        .. (dropped > 0 and (", " .. dropped .. " cabinet(s) unlinked: wrong bus)") or ""))
       ply:SetNWEntity("NtxSrc", NULL)
       return true
     end
