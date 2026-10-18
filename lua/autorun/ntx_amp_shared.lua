@@ -620,9 +620,30 @@ NTx.RegisterWireTypes = registerWireTypes
 -- count, so a rebuild has to be able to replace an existing port table instead
 -- of failing on a duplicate create. Inputs and outputs are handled separately
 -- because an entity can legitimately have one and not the other.
-local function wireAdjust(fn, ent, names, types, desc)
+-- Reports a failed port create instead of swallowing it. A bare pcall here is
+-- the worst possible place for one: when CreateSpecialInputs throws, the entity
+-- simply ends up with NO wire ports, so the wire tool shows no gizmos and there
+-- is nothing on screen to say why. Almost always an unregistered type name -
+-- WireLib.GetDefaultForType indexes WireLib.DT[type] unguarded, so a type that
+-- was never registered throws and takes every port on that side with it.
+local function wireAdjust(fn, ent, names, types, desc, side)
   if #names == 0 then return end
-  pcall(fn, ent, names, types, desc)
+  local ok, err = pcall(fn, ent, names, types, desc)
+  if not ok then
+    local msg = string.format("[NTx wire] %s could not create its %s ports: %s",
+      IsValid(ent) and ent:GetClass() or tostring(ent), tostring(side), tostring(err))
+    if SERVER then ErrorNoHalt(msg) else print(msg) end
+    return
+  end
+  -- Wiremod can also "succeed" and still leave the table empty. Verify rather
+  -- than trust, because the symptom - no gizmos - is indistinguishable from an
+  -- entity that legitimately has no ports.
+  local tbl = side == "input" and ent.Inputs or ent.Outputs
+  if istable(tbl) and tbl[names[1]] == nil then
+    local msg = string.format("[NTx wire] %s reports %d %s ports but %s is missing from the table",
+      IsValid(ent) and ent:GetClass() or tostring(ent), #names, tostring(side), tostring(names[1]))
+    if SERVER then ErrorNoHalt(msg) else print(msg) end
+  end
 end
 
 -- sigNames/nSig marks the leading ports as signal-level so they get the custom
@@ -658,12 +679,12 @@ function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts,
   if #inNames > 0 then
     local fn = (ent.Inputs and WireLib.AdjustSpecialInputs) and WireLib.AdjustSpecialInputs
       or WireLib.CreateSpecialInputs
-    wireAdjust(fn, ent, inNames, typeList(inNames, sigIns, inOverrides), inDesc)
+    wireAdjust(fn, ent, inNames, typeList(inNames, sigIns, inOverrides), inDesc, "input")
   end
   if #outNames > 0 then
     local fn = (ent.Outputs and WireLib.AdjustSpecialOutputs) and WireLib.AdjustSpecialOutputs
       or WireLib.CreateSpecialOutputs
-    wireAdjust(fn, ent, outNames, typeList(outNames, sigOuts, outOverrides), outDesc)
+    wireAdjust(fn, ent, outNames, typeList(outNames, sigOuts, outOverrides), outDesc, "output")
   end
   return true
 end
