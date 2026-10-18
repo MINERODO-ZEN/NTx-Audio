@@ -117,9 +117,35 @@ end
 
 -- ------------------------------------------------------------ amplifier UI
 
+-- Forward declaration: the public entry point below wraps this in a pcall, and a
+-- `local function` further down would not be in scope at the call site yet.
+local buildAmpUI
+
 function NTx.OpenAmpUI(amp)
   if not IsValid(amp) then return end
   if IsValid(openPanel) then openPanel:Close() end
+  openPanel = nil
+  -- The panel is assembled top to bottom, so an error halfway through used to
+  -- leave a half-built window with no explanation and no way to tell which
+  -- control was missing. Same treatment as the Utilities page.
+  local ok, err = pcall(buildAmpUI, amp)
+  if not ok then
+    print("[NTx] amplifier panel build failed: " .. tostring(err))
+    local frame = vgui.Create("DFrame")
+    frame:SetTitle("NTx Amplifier - build failed")
+    frame:SetSize(600, 120)
+    frame:Center()
+    frame:MakePopup()
+    local lbl = vgui.Create("DLabel", frame)
+    lbl:Dock(FILL)
+    lbl:SetWrap(true)
+    lbl:SetDark(true)
+    lbl:SetText("The amplifier panel failed to build:\n" .. tostring(err))
+    openPanel = frame
+  end
+end
+
+buildAmpUI = function(amp)
   local rec = NTx.AmpRecord(amp)
 
   local frame = vgui.Create("DFrame")
@@ -203,7 +229,11 @@ function NTx.OpenAmpUI(amp)
   faultWrap:SetTall(28)
   faultWrap:DockMargin(4, 2, 4, 0)
   faultWrap:SetPaintBackground(false)
-  for _, f in ipairs({ "brownout", "overvoltage", "dc", "short", "thermal", "kill", "none" }) do
+  for _, fault in ipairs({ "brownout", "overvoltage", "dc", "short", "thermal", "kill", "none" }) do
+    -- Local copy: Lua 5.1 shares one loop variable across iterations, so a
+    -- closure over the loop variable itself would send the LAST value from
+    -- every button.
+    local f = fault
     local b = vgui.Create("DButton", faultWrap)
     b:SetText(f)
     b:SetWide(72)
@@ -279,7 +309,10 @@ function NTx.OpenAmpUI(amp)
   label(scroll, "CABINETS", COL_WARN, 18):Dock(TOP)
   local spkLabels = {}
   local any = false
-  for _, spk in ipairs(ents.FindByClass("ntx_speaker")) do
+  for _, cabinet in ipairs(ents.FindByClass("ntx_speaker")) do
+    -- Local copy, for the same reason as the fault buttons: one shared loop
+    -- variable would make every row open the last cabinet in the list.
+    local spk = cabinet
     if IsValid(spk) and spk:GetAmp() == amp then
       any = true
       local sr = row(scroll, 22)

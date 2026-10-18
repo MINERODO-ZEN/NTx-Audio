@@ -1,15 +1,14 @@
 -- Tool: NTx Connections.
 --
--- Wiring only: sources into mixers, cabinets into amplifiers, amplifiers into
--- mixers, plus the input/bus source settings. Amplifiers' internals live on
--- the Amplifier tool; cabinets' on the Speaker tool.
+-- Wiring plus the input/bus source settings. Amplifier settings live on the
+-- Amplifier tool, cabinet settings on the Speaker tool.
 --
 --   left-click    first the source, then the destination: input / cabinet /
 --                 bus -> mixer, cabinet -> amplifier, mixer -> amplifier (opens
---                 the per-channel patch panel), amplifier on its own (same).
---                 Clicking a mixer with nothing pending opens its UI.
+--                 the per-channel patch panel). The same gesture works on the
+--                 other two tools. Shift-click opens any NTx entity's panel
 --   right-click   an input or fallback bus: apply its settings from this panel
---   reload       unlink the aimed entity from whatever it feeds; also clears
+--   reload        unlink the aimed entity from whatever it feeds; also clears
 --                 the pending source selection
 TOOL.Category = "NTx"
 TOOL.Name = "#tool.ntx_connection_tool.name"
@@ -33,88 +32,16 @@ local function cv(key)
   return "ntx_connection_tool_" .. key
 end
 
-local function isLinkable(ent)
-  return IsValid(ent) and (ent:GetClass() == "ntx_mixer" or ent:GetClass() == "ntx_speaker"
-    or ent:GetClass() == "ntx_fallback_bus" or ent:GetClass() == "ntx_input_url"
-    or ent:GetClass() == "ntx_amplifier")
-end
-
--- Left: the two-click link. First click selects the source, second selects the
--- destination; the amplifier decides what "destination" means (a cabinet links
--- straight onto a channel, a mixer opens the bus picker instead of guessing).
+-- Left: the shared link/select gesture (ntx_net.lua). This tool is where linking
+-- normally happens, but the same gesture is live on the other two, so a player
+-- who picked up the wrong tool can still wire the rig. Shift-click opens any NTx
+-- entity's panel.
 function TOOL:LeftClick(tr)
   if CLIENT then return true end
   local ply = self:GetOwner()
   local ent = tr.Entity
-  if not isLinkable(ent) then return false end
-  local src = ply:GetNWEntity("NtxSrc")
-
-  -- Amplifier as the destination: either a cabinet -> amplifier link, or a
-  -- mixer, which opens the per-channel bus picker instead of silently linking.
-  -- What each output drives decides which bus the amplifier reads for its level,
-  -- so that choice has to be made by the player.
-  if ent:GetClass() == "ntx_amplifier" and IsValid(src) and src ~= ent then
-    if src:GetClass() == "ntx_mixer" then
-      if not NTx.CanEditRig(ply, ent) then
-        ply:ChatPrint("[NTx] You do not own that amplifier.")
-        return false
-      end
-      ply:ConCommand("ntx_amp_patch " .. ent:EntIndex() .. " " .. src:EntIndex())
-      ply:SetNWEntity("NtxSrc", NULL)
-      return true
-    end
-    if src:GetClass() == "ntx_speaker" then
-      if src:GetActive() then
-        ply:ChatPrint("[NTx] That cabinet is self-powered (ACTIVE): no amplifier in its chain.")
-        ply:SetNWEntity("NtxSrc", NULL)
-        return true
-      end
-      local ch = self:GetClientNumber("spkampch", 0)
-      local ok, why = NTx.LinkSpeakerToAmp(ply, src, ent, ch)
-      if ok then
-        ply:ChatPrint("[NTx] Cabinet " .. src:EntIndex() .. " -> amplifier "
-          .. ent:EntIndex() .. " ch" .. ch .. " (" .. NTx.SpkOhmText(src) .. ").")
-      elseif why == "bus" then
-        ply:ChatPrint("[NTx] That channel is patched for "
-          .. (ent:ChannelIsSub(ch) and "SUB" or "MID") .. " and the cabinet is "
-          .. src:GetSpeakerType() .. ". Patch the amplifier to a mixer first.")
-      end
-      ply:SetNWEntity("NtxSrc", NULL)
-      return true
-    end
-    if NTx.LinkToMixer(ply, src, ent) then
-      ply:ChatPrint("[NTx] Linked " .. src:GetClass() .. " -> amplifier " .. ent:EntIndex() .. ".")
-      ply:SetNWEntity("NtxSrc", NULL)
-      return true
-    end
-    return false
-  end
-
-  if ent:GetClass() == "ntx_mixer" and IsValid(src) and src ~= ent then
-    if NTx.LinkToMixer(ply, src, ent) then
-      ply:ChatPrint("[NTx] Linked " .. src:GetClass() .. " -> mixer.")
-      ply:SetNWEntity("NtxSrc", NULL)
-      return true
-    end
-    return false
-  end
-
-  if ent:GetClass() == "ntx_mixer" then
-    -- Clicked mixer with no source: open its UI.
-    ply:ConCommand("ntx_open_mixer " .. ent:EntIndex())
-    return true
-  end
-
-  if ent:GetClass() == "ntx_amplifier" then
-    -- No source pending: the amplifier's only outward link is to a mixer, so
-    -- open its patch panel directly.
-    ply:ConCommand("ntx_amp_patch " .. ent:EntIndex())
-    return true
-  end
-
-  ply:SetNWEntity("NtxSrc", ent)
-  ply:ChatPrint("[NTx] Source selected. Click a mixer or an amplifier to link.")
-  return true
+  if NTx.ToolShift(ply) and NTx.OpenEntityGui(ply, ent) then return true end
+  return NTx.ToolLinkClick(ply, ent)
 end
 
 -- Right: apply the input / bus settings to the aimed source entity.
@@ -174,7 +101,7 @@ end
 function TOOL.BuildCPanel(panel)
   panel:AddControl("Header", { Description = "#tool.ntx_connection_tool.desc" })
   panel:AddControl("Label", {
-    Text = "Left-click: source, then destination (input/cabinet/bus -> mixer, cabinet -> amplifier, mixer -> amplifier opens the patch panel).\nRight-click an input or bus: apply its settings. Reload: unlink.",
+    Text = "Left-click: source, then destination (input/cabinet/bus -> mixer, cabinet -> amplifier, mixer -> amplifier opens the patch panel). Shift-click opens any NTx entity panel. Right-click an input or bus: apply its settings. Reload: unlink.",
   })
 
   panel:AddControl("Label", { Text = "INPUT  (right-click a ntx_input_url)" })
@@ -206,7 +133,7 @@ function TOOL.BuildCPanel(panel)
   -- Preselect by index: ChooseOptionID fires OnSelect, which is still the
 -- no-op the base class provides, so nothing is written during panel build.
   right:ChooseOptionID(flat == "1" and 2 or 1)
-  right.OnSelect = function(_, _, _, data)
+  right.OnSelect = function(_, _, data)
     if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
 
@@ -220,7 +147,7 @@ end
 if CLIENT then
   language.Add("tool.ntx_connection_tool.name", "NTx Connections")
   language.Add("tool.ntx_connection_tool.desc", "Link sources, cabinets and amplifiers; configure inputs and buses")
-  language.Add("tool.ntx_connection_tool.left", "Select source / link to mixer or amplifier / open its UI")
+  language.Add("tool.ntx_connection_tool.left", "Select source / link to mixer or amplifier (shift: open panel)")
   language.Add("tool.ntx_connection_tool.right", "Apply settings to the aimed input or bus")
   language.Add("tool.ntx_connection_tool.reload", "Unlink the aimed entity")
 end

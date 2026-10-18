@@ -1,13 +1,11 @@
 -- Tool: NTx Speaker.
 --
--- Cabinet-only. One verb per job:
---   left-click a cabinet     open its full panel (profile picker, live coil
---                            readout, per-cabinet settings)
---   right-click a cabinet    apply the settings from this panel, the profile
---                            included
---   reload on a cabinet      flip rear polarity (alt: unlink from its amplifier)
---
--- Patching a cabinet to an amplifier is the Connections tool's job.
+-- Cabinet settings only. One verb per job:
+--   left-click    select / link (shared with the other two tools). Shift-click
+--                 opens the panel of ANY NTx entity aimed at
+--   right-click   apply the settings from this panel to the cabinet, the profile
+--                 included
+--   reload        flip rear polarity (alt: unlink from its amplifier)
 TOOL.Category = "NTx"
 TOOL.Name = "#tool.ntx_speaker_tool.name"
 TOOL.Command = nil
@@ -54,12 +52,15 @@ local function aimedSpeaker()
   return nil
 end
 
+-- Left-click: link/select only, via the shared gesture in ntx_net.lua. Shift-
+-- click opens the panel of whatever NTx entity is aimed at, whichever tool is
+-- held.
 function TOOL:LeftClick(tr)
   if CLIENT then return true end
+  local ply = self:GetOwner()
   local ent = tr.Entity
-  if not (IsValid(ent) and ent:GetClass() == "ntx_speaker") then return false end
-  self:GetOwner():ConCommand("ntx_open_cabinet " .. ent:EntIndex())
-  return true
+  if NTx.ToolShift(ply) and NTx.OpenEntityGui(ply, ent) then return true end
+  return NTx.ToolLinkClick(ply, ent)
 end
 
 -- Right-click: stamp this panel's settings onto the aimed cabinet. The profile
@@ -134,7 +135,7 @@ local function dropdown(panel, label, convar, choices)
   -- preselect fires OnSelect, which is harmless because DComboBox has a no-op
   -- one until the real handler is installed below.
   right:ChooseOptionID(index[current] or 1)
-  right.OnSelect = function(_, _, _, data)
+  right.OnSelect = function(_, _, data)
     if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
   return right
@@ -155,7 +156,7 @@ local function profilePicker(panel, list, convar, mark)
   end
   local cvar = GetConVar(convar)
   combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
-  combo.OnSelect = function(_, _, _, data)
+  combo.OnSelect = function(_, _, data)
     if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
   return combo
@@ -165,7 +166,7 @@ end
 function TOOL.BuildCPanel(panel)
   panel:AddControl("Header", { Description = "#tool.ntx_speaker_tool.desc" })
   panel:AddControl("Label", {
-    Text = "Left-click a cabinet to open its full panel. Right-click applies the settings below (profile included). Reload flips polarity; alt+reload unlinks it from its amplifier.",
+    Text = "Left-click selects and links (source, then destination). Shift-click opens any NTx entity panel. Right-click applies the settings below, profile included. Reload flips polarity; alt+reload unlinks from its amplifier.",
   })
 
   -- Profile: the dropdown is the picker, but right-click is not the only way to
@@ -291,7 +292,7 @@ end
 if CLIENT then
   language.Add("tool.ntx_speaker_tool.name", "NTx Speaker")
   language.Add("tool.ntx_speaker_tool.desc", "Cabinet profile, power and placement settings")
-  language.Add("tool.ntx_speaker_tool.left", "Open the cabinet panel")
+  language.Add("tool.ntx_speaker_tool.left", "Select / link the aimed entity (shift: open its panel)")
   language.Add("tool.ntx_speaker_tool.right", "Apply these settings to the cabinet")
   language.Add("tool.ntx_speaker_tool.reload", "Flip polarity (alt: unlink from amplifier)")
 end

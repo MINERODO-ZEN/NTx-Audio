@@ -1,13 +1,11 @@
 -- Tool: NTx Amplifier.
 --
--- Amplifier-only. One verb per job:
---   left-click an amplifier    open its full panel (model picker, fault
---                              injection, live channel readout)
---   right-click an amplifier   apply the settings from this panel
---   reload on an amplifier     clear faults and revive it (power, fan, no fault)
---
--- Linking an amplifier to a mixer is the Connections tool's job; cabinet
--- settings live on the Speaker tool.
+-- Amplifier settings only. One verb per job:
+--   left-click    select / link (shared with the other two tools, so the rig can
+--                 be wired whatever is in your hands). Shift-click opens the
+--                 panel of ANY NTx entity aimed at, including mixers and cabinets
+--   right-click   apply the settings from this panel onto the amplifier
+--   reload        clear faults and revive it (power, fan, no fault)
 TOOL.Category = "NTx"
 TOOL.Name = "#tool.ntx_amp_tool.name"
 TOOL.Command = nil
@@ -36,13 +34,15 @@ local function cv(key)
   return "ntx_amp_tool_" .. key
 end
 
--- Left-click: open the aimed amplifier's panel.
+-- Left-click: link/select only, via the shared gesture in ntx_net.lua. Shift-
+-- click opens the panel of whatever NTx entity is aimed at, whichever tool is
+-- held.
 function TOOL:LeftClick(tr)
   if CLIENT then return true end
+  local ply = self:GetOwner()
   local ent = tr.Entity
-  if not (IsValid(ent) and ent:GetClass() == "ntx_amplifier") then return false end
-  self:GetOwner():ConCommand("ntx_open_amp " .. ent:EntIndex())
-  return true
+  if NTx.ToolShift(ply) and NTx.OpenEntityGui(ply, ent) then return true end
+  return NTx.ToolLinkClick(ply, ent)
 end
 
 -- Right-click: stamp this panel's settings onto the aimed amplifier. Choosing a
@@ -116,7 +116,7 @@ local function dropdown(panel, label, convar, choices)
   -- preselect fires OnSelect, which is harmless because DComboBox has a no-op
   -- one until the real handler is installed below.
   right:ChooseOptionID(index[current] or 1)
-  right.OnSelect = function(_, _, _, data)
+  right.OnSelect = function(_, _, data)
     if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
   return right
@@ -137,7 +137,7 @@ local function modelPicker(panel, convar)
   end
   local cvar = GetConVar(convar)
   combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
-  combo.OnSelect = function(_, _, _, data)
+  combo.OnSelect = function(_, _, data)
     if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
   return combo
@@ -147,7 +147,7 @@ end
 function TOOL.BuildCPanel(panel)
   panel:AddControl("Header", { Description = "#tool.ntx_amp_tool.desc" })
   panel:AddControl("Label", {
-    Text = "Left-click an amplifier to open its full panel. Right-click applies the settings below. Reload clears faults and revives it.",
+    Text = "Left-click selects and links. Shift-click opens any NTx entity panel. Right-click applies the settings below. Reload clears faults and revives it.",
   })
 
   panel:AddControl("Label", { Text = "AMPLIFIER MODEL" })
@@ -205,7 +205,7 @@ end
 if CLIENT then
   language.Add("tool.ntx_amp_tool.name", "NTx Amplifier")
   language.Add("tool.ntx_amp_tool.desc", "Amplifier model, channel and protection settings")
-  language.Add("tool.ntx_amp_tool.left", "Open the amplifier panel")
+  language.Add("tool.ntx_amp_tool.left", "Select / link the aimed entity (shift: open its panel)")
   language.Add("tool.ntx_amp_tool.right", "Apply these settings to the amplifier")
   language.Add("tool.ntx_amp_tool.reload", "Clear faults and revive the amplifier")
 end

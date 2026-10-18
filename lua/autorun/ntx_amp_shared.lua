@@ -55,10 +55,11 @@ NTx.AmpProfiles = {
     model = "models/props_lab/reciever01b.mdl",
     box = Vector(12, 12, 4),
     mass = 22.7,
-    channels = 4,
+    channels = 2,
     class = "AB",
     modeLabel = "AB (toroidal + linear supply)",
-    -- 4 x 520 W into 8 ohm, 4 x 800 W into 4 ohm, 4 x 1050 W into 2 ohm.
+    -- 2 x 520 W into 8 ohm, 2 x 800 W into 4 ohm, 2 x 1050 W into 2 ohm.
+    -- The Macro-Tech 2400 is a two-channel amplifier; "2400" is the total.
     power = { { 2, 1050 }, { 4, 800 }, { 8, 520 }, { 16, 320 } },
     ratedLoad = 8,
     minLoad = 2,
@@ -607,4 +608,35 @@ NTx.AmpFaultCodes = {
 
 function NTx.AmpFaultName(code)
   return NTx.AmpFaultCodes[math.floor(tonumber(code) or 0)] or "unknown"
+end
+
+-- ------------------------------------------------------------------ GUI verbs
+
+-- Which panel an entity gets, by class. Every tool shift-clicks through this,
+-- so any tool can open any NTx entity's panel: which tool happens to be in your
+-- hands is not a reason to be unable to look at a cabinet.
+function NTx.GuiVerb(ent)
+  if not IsValid(ent) then return "" end
+  local cls = ent:GetClass()
+  if cls == "ntx_amplifier" then return "ntx_open_amp " .. ent:EntIndex() end
+  if cls == "ntx_speaker" then return "ntx_open_cabinet " .. ent:EntIndex() end
+  if cls == "ntx_mixer" then return "ntx_open_mixer " .. ent:EntIndex() end
+  return ""
+end
+
+-- Shift-click is the one gesture that opens a panel. The tools run their click
+-- handlers on the server, so this is driven by a player and sends the console
+-- command to that player's client. Returns true when it consumed the click.
+function NTx.OpenEntityGui(ply, ent)
+  local cmd = NTx.GuiVerb(ent)
+  if cmd == "" or not IsValid(ply) then return false end
+  ply:ConCommand(cmd)
+  return true
+end
+
+-- The shift state of a tool click. Checked server-side because LeftClick runs
+-- there, and read off the owning player rather than the global (the realm
+-- local "KeyDown" would answer for the server's own input).
+function NTx.ToolShift(ply)
+  return IsValid(ply) and (ply:KeyDown(KEY_LSHIFT) or ply:KeyDown(KEY_RSHIFT))
 end
