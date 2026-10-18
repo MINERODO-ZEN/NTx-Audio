@@ -201,13 +201,14 @@ function TOOL.BuildCPanel(panel)
   right:SetTall(26)
   right:AddChoice("3D positional", "0")
   right:AddChoice("2D stereo", "1")
+  local cvar = GetConVar(cv("busflat"))
+  local flat = cvar and cvar:GetString() or ""
+  -- Preselect by index: ChooseOptionID fires OnSelect, which is still the
+-- no-op the base class provides, so nothing is written during panel build.
+  right:ChooseOptionID(flat == "1" and 2 or 1)
   right.OnSelect = function(_, _, _, data)
-    local cvar = GetConVar(cv("busflat"))
     if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
-  local flat = GetConVarString(cv("busflat"))
-  right:ChooseOptionID(flat)
-  right:SetValue(flat)
 
   panel:AddControl("Label", { Text = "GIZMOS (owner-only: other players never see them)" })
   panel:AddControl("CheckBox", {

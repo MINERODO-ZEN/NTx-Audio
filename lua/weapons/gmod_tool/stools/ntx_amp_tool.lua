@@ -98,50 +98,46 @@ end
 -- AddControl("ComboBox", {MenuButton = 1}) does NOT build a value dropdown: it
 -- hands that case to a preset picker, which never shows the current value and
 -- writes a preset file from its + button. The DForm row is the real control -
--- but it binds to "ntsl_<tool>_<key>", the command name AddControl asked for,
--- and its ComboBox does not write that convar when an option is picked. Right-
--- click reads the convar on the server, so the selection is written here.
+-- but its ComboBox does not write the bound convar when an option is picked,
+-- and RightClick reads that convar on the server, so the pick is written here.
 local function dropdown(panel, label, convar, choices)
   local right = panel:ComboBox(label, convar)
   right:SetTall(26)
-  for _, ch in ipairs(choices) do
+  local index = {}
+  for i, ch in ipairs(choices) do
     right:AddChoice(ch[1], ch[2])
-  end
-  -- ChooseOption passes (index, text, data): the third argument is the choice's
-  -- own value. RunConsoleCommand is unusable here, it splits on spaces.
-  right.OnSelect = function(_, _, _, data)
-    local cvar = GetConVar(convar)
-    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
+    index[tostring(ch[2])] = i
   end
   local cvar = GetConVar(convar)
   local current = cvar and cvar:GetString() or ""
-  right:ChooseOptionID(current)
-  right:SetValue(current)
+  -- DComboBox picks by INDEX (ChooseOptionID), and ChooseOption - which it calls
+  -- internally - takes the option text as its first argument, so preselecting
+  -- with a raw value is what errors out. Hence the map; the
+  -- preselect fires OnSelect, which is harmless because DComboBox has a no-op
+  -- one until the real handler is installed below.
+  right:ChooseOptionID(index[current] or 1)
+  right.OnSelect = function(_, _, _, data)
+    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
+  end
   return right
 end
 
 -- The model list is dynamic (it grows with every profile NTx knows), so it is
--- built by hand rather than through the DForm row. Choosing a model writes the
--- convar RightClick applies.
+-- built by hand rather than through the DForm row. Same value -> index rule as
+-- the dropdown above.
 local function modelPicker(panel, convar)
   local combo = vgui.Create("DComboBox", panel)
   combo:Dock(TOP)
   combo:DockMargin(4, 0, 4, 0)
   combo:SetTall(26)
   local index = {}
-  local ids = NTx.AmpProfileIds()
-  for i, id in ipairs(ids) do
+  for i, id in ipairs(NTx.AmpProfileIds()) do
     combo:AddChoice(NTx.AmpProfile(id).name, id)
     index[id] = i
   end
-  -- Preselect BEFORE OnSelect is attached: ChooseOptionID fires OnSelect with
-  -- the option's *text*, which is a model name, not the id RightClick needs.
-  if ids[1] then
-    local cvar = GetConVar(convar)
-    combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
-  end
+  local cvar = GetConVar(convar)
+  combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
   combo.OnSelect = function(_, _, _, data)
-    local cvar = GetConVar(convar)
     if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
   return combo
