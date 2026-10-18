@@ -85,40 +85,6 @@ local function channelOf(amp, spk)
   return NTx.AmpSpeakerChannel(amp, spk)
 end
 
--- Input level reaching one amplifier channel: the matching mixer bus, summed
--- in energy across the inputs linked to that mixer. Mirrors the client gain
--- path exactly (master x bus x channel x input volume) so the meters and the
--- heat agree with what the speakers are actually being fed.
-local function busLevel(mixer, bus)
-  if not IsValid(mixer) then return 0 end
-  if mixer.GetMasterMuted and mixer:GetMasterMuted() then return 0 end
-  local busFader
-  if bus == "sub" then
-    if mixer.GetSubMuted and mixer:GetSubMuted() then return 0 end
-    busFader = mixer:GetSubFader()
-  else
-    if mixer.GetMidMuted and mixer:GetMidMuted() then return 0 end
-    busFader = mixer:GetMidFader()
-  end
-  local base = NTx.FaderToGain(mixer:GetMasterFader()) * NTx.FaderToGain(busFader)
-  local energy = 0
-  for _, inp in ipairs(ents.FindByClass("ntx_input_url")) do
-    if IsValid(inp) and inp.GetMixer and inp:GetMixer() == mixer then
-      local g = base
-      local chFader, muted = 1, false
-      for _, ch in ipairs(mixer.Channels or {}) do
-        if ch.Input == inp then
-          chFader, muted = ch.Fader, ch.Muted
-          break
-        end
-      end
-      if muted then return 0 end
-      -- The input volume is applied linearly by the audio path, not tapered.
-      g = g * NTx.FaderToGain(chFader) * (tonumber(inp:GetInputVolume()) or 1)
-      energy = energy + g * g
-    end
-  end
-  return math.sqrt(energy)
 end
 
 -- ------------------------------------------------------------ integration
@@ -144,7 +110,6 @@ local function stepAmp(amp, now, dt)
   local damageEnabled = NTx.AmpDamageEnabled()
   local crest = NTx.AmpCrestDb(amp:GetCrestDb())
   local hizV = math.floor(tonumber(amp:GetHizVolt()) or 0)
-  local busMask = amp:GetBusMask()
 
   -- Mains and the supply's opinion of it.
   local mains = amp:MainsVoltage(NTx.AmpNominalMains())
@@ -168,11 +133,9 @@ local function stepAmp(amp, now, dt)
   local standby = false
   if powered and amp:GetAutoStandby() and not locked and amp:UsableChannels() > 0 then
     local quiet = true
-    local mixer = amp:GetMixer()
-    if IsValid(mixer) then
-      for _, ch in ipairs(amp:ActiveChannels()) do
-        local bus = bit.band(busMask, bit.lshift(1, ch - 1)) ~= 0 and "sub" or "mid"
-        if busLevel(mixer, bus) > 0.001 then quiet = false break end
+    for _, ch in ipairs(amp:ActiveChannels()) do
+        if (amp.WireInputValues and amp.WireInputValues[ch] or 0) > 0.001 then quiet = false break end
+
       end
     end
     if quiet then
@@ -191,7 +154,6 @@ local function stepAmp(amp, now, dt)
     local c = st[ch]
     local pair = amp:ChannelPair(ch)
     local mode = NTx.AmpMode(p, amp:GetMode())
-    local isSub = bit.band(busMask, bit.lshift(1, ch - 1)) ~= 0
 
     -- Load: every cabinet assigned to either half of a fused pair.
     local list, spkEnts = {}, {}
@@ -223,8 +185,7 @@ local function stepAmp(amp, now, dt)
     if paired and mode == "bridge" then gainDb = gainDb + 6.02 end
     gainDb = gainDb + (amp:GetTrim() or 0)
 
-    local mixer = amp:GetMixer()
-    local lin = (not powered or locked or standby) and 0 or busLevel(mixer, isSub and "sub" or "mid")
+    local lin = (not powered or locked or standby) and 0 or (amp.WireInputValues and amp.WireInputValues[ch] or 0)
     local vScaled = NTx.AmpLinToVolts(lin) * NTx.AmpVoltRatio(gainDb)
 
     -- Damage already taken costs clean output before anything else does.
@@ -276,6 +237,7 @@ local function stepAmp(amp, now, dt)
 
     local muted = protect or locked or standby or (not powered)
     local vOut = muted and 0 or v
+    if WireLib then WireLib.TriggerOutput(amp, "Ch" .. ch .. "Out", math.min(vOut, 1)) end
     local amps = vOut / math.max(z, 0.05)
     local watts = amps * vOut
     local clipLit = (not muted) and clip > 1
