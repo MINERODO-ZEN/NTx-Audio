@@ -84,8 +84,7 @@ function ENT:TriggerInput(name, value)
       if name:match("Bus$") then
         -- The bus identifier. This is what makes the channel's type a
         -- consequence of the wiring rather than of a panel setting.
-        self.BusIds = self.BusIds or {}
-        self.BusIds[ch] = NTx.BusClamp(v2)
+        self:SetChannelBus(ch, v2)
       else
         self.WireSignal = self.WireSignal or {}
         self.WireSignal[ch] = math.Clamp(v2 or 0, 0, 2)
@@ -109,6 +108,7 @@ function ENT:PreEntityCopy()
     chans = self:GetChannels(), ratedw = self:GetRatedW(), ratedz = self:GetRatedLoad(),
     minz = self:GetMinLoad(), sens = self:GetSens(), trim = self:GetTrim(), ilime = self:GetIlime(),
     mode = self:GetMode(), hizv = self:GetHizVolt(), busmask = self:GetBusMask(), meters = self:GetMeters(),
+    chanbus = self:GetChannelBuses(),
     pfc = self:GetPFC(), hum = self:GetMainsHum(), humdb = self:GetHumDb(),
     fan = self:GetFanNoise(), fandb = self:GetFanNoiseDb(),
     standby = self:GetAutoStandby(), sbdelay = self:GetStandbyDelay(),
@@ -137,6 +137,7 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetMode(math.Clamp(math.floor(tonumber(d.mode) or 0), 0, 2))
     self:SetHizVolt(math.Clamp(math.floor(tonumber(d.hizv) or 0), 0, 240))
     self:SetBusMask(math.Clamp(math.floor(tonumber(d.busmask) or 0), 0, 255))
+    self:SetChannelBuses(math.Clamp(math.floor(tonumber(d.chanbus) or 0), 0, 65535))
     self:SetMeters(math.Clamp(math.floor(tonumber(d.meters) or 0), 0, 2))
     self:SetPFC(d.pfc == true)
     self:SetMainsHum(d.hum == true)

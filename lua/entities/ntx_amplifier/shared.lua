@@ -57,6 +57,10 @@ function ENT:SetupDataTables()
 
   -- Runtime state, networked so a client far from the amplifier (or outside the
   -- sync radius) still shows a truthful panel instead of a dead one.
+  -- Derived, not authored: two bits per channel holding the bus id the mixer
+  -- published on Ch<N>Bus. This is the mirror the client panel reads, exactly
+  -- as Amp/AmpChannel are - wires own the truth, this replicates it.
+  self:NetworkVar("Int", 6, "ChannelBuses", { KeyName = "chanbus", Edit = { type = "Float", min = 0, max = 65535, step = 1, order = 14, category = "NTx Amp" } })
   self:NetworkVar("Bool", 4, "Power", { KeyName = "amppower", Edit = { type = "Boolean", order = 1, category = "NTx Amp Sim" } })
   self:NetworkVar("Bool", 5, "FanOn", { KeyName = "ampfanon", Edit = { type = "Boolean", order = 2, category = "NTx Amp Sim" } })
   self:NetworkVar("Bool", 6, "Standby", { KeyName = "ampstand", Edit = { type = "Boolean", order = 3, category = "NTx Amp Sim" } })
@@ -218,9 +222,22 @@ end
 -- beside the level. This is what the channel IS: not a panel setting that can
 -- disagree with the wiring. Returns nil when nothing identifies it yet.
 function ENT:ChannelBusId(ch)
-  local id = (self.BusIds or {})[ch]
-  if id == nil then return nil end
+  local packed = self:GetChannelBuses() or 0
+  local shift = (math.floor(tonumber(ch) or 1) - 1) * 2
+  if shift < 0 then return nil end
+  local id = bit.band(bit.rshift(packed, shift), 3)
   return NTx.BusClamp(id)
+end
+
+-- Records one channel's bus. Called from TriggerInput when the mixer's
+-- identifier arrives, and from the duplicator.
+function ENT:SetChannelBus(ch, id)
+  local shift = (math.floor(tonumber(ch) or 1) - 1) * 2
+  if shift < 0 then return end
+  local packed = self:GetChannelBuses() or 0
+  packed = bit.band(packed, bit.bnot(bit.lshift(3, shift)))
+  packed = bit.bor(packed, bit.lshift(NTx.BusClamp(id), shift))
+  self:SetChannelBuses(packed)
 end
 
 function ENT:ChannelBus(ch)
