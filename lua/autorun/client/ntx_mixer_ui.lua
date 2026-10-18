@@ -36,7 +36,9 @@ local function sendBus(mixer, which, fader, muted)
   net.SendToServer()
 end
 
-local function sendChannel(mixer, input, fader, muted, text)
+-- The bus a channel feeds goes last so an older client that stops after the
+-- label leaves the existing assignment alone.
+local function sendChannel(mixer, input, fader, muted, text, bus)
   net.Start("NTx.MixerEdit")
   net.WriteEntity(mixer)
   net.WriteString("channel")
@@ -44,8 +46,16 @@ local function sendChannel(mixer, input, fader, muted, text)
   net.WriteFloat(NTx.ClampFader(fader))
   net.WriteBool(muted)
   net.WriteString(string.sub(text or "", 1, 24))
+  net.WriteUInt(NTx.BusClamp(bus), 3)
   net.SendToServer()
 end
+
+-- Four ways for one source to reach the buses. Picker rather than a wire: this
+-- is a patch decision like the fader, and it belongs with the fader.
+local BUS_CHOICES = {
+  { "MID L", NTx.BUS_MIDL }, { "MID R", NTx.BUS_MIDR },
+  { "SUB L", NTx.BUS_SUBL }, { "SUB R", NTx.BUS_SUBR },
+}
 
 local function mixerRec(ent)
   for _, m in ipairs(NTx.Graph.mixers) do
@@ -169,10 +179,18 @@ function NTx.OpenMixerUI(mixer)
       local db = label(bot, dbLabel(ch.fader), COL_DIM)
       db:SetWide(62)
       db:Dock(RIGHT)
+      local busBox = vgui.Create("DComboBox", bot)
+      busBox:Dock(RIGHT)
+      busBox:SetWide(74)
+      busBox:SetTall(20)
+      for _, b in ipairs(BUS_CHOICES) do NTx.ComboAdd(busBox, b[1], b[2]) end
+      NTx.ComboPick(busBox, ch.bus)
       local apply = function()
         db:SetText(dbLabel(slider:GetValue()))
-        sendChannel(mixer, ch.input, slider:GetValue(), mute:GetChecked(), entry:GetValue())
+        sendChannel(mixer, ch.input, slider:GetValue(), mute:GetChecked(),
+          entry:GetValue(), NTx.ComboGet(busBox))
       end
+      busBox.OnSelect = function() apply() end
       slider.OnValueChanged = function() apply() end
       mute.OnChange = function() apply() end
       entry.OnEnter = function() apply() end

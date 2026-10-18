@@ -138,6 +138,13 @@ local function wiredDown(ent)
   return false
 end
 
+-- Is anything wired into this entity's named input?
+local function wiredUpPort(ent, port)
+  if not IsValid(ent) or not ent.Inputs then return false end
+  local i = ent.Inputs[port]
+  return (i and IsValid(i.Src)) or false
+end
+
 -- Does anything feed this entity's named signal output?
 local function wiredDownPort(ent, port)
   if not IsValid(ent) or not ent.Outputs then return false end
@@ -220,7 +227,28 @@ local function rebuild()
     if ent:GetMixer() ~= mixer then ent:SetMixer(mixer) end
   end
   for _, e in ipairs(inputs) do if IsValid(e) then patchInto(e, "Buses") end end
-  for _, e in ipairs(buses) do if IsValid(e) then patchInto(e, "Out") end end
+
+  -- A fallback bus is a SINK, so its mixer comes from whatever feeds its "In",
+  -- not from anything downstream of its "Out". Resolving it the other way round
+  -- left the BASS path unable to pair a fallback with its mixer, which is the
+  -- only thing that decides where its stream plays from.
+  for _, e in ipairs(buses) do
+    if IsValid(e) then
+      local mixer
+      local src = NTx.WireUpstream(e, "In")
+      if IsValid(src) and src:GetClass() == "ntx_mixer" then
+        mixer = src
+      else
+        for _, dst in ipairs(NTx.WireDownstream(e, "Out")) do
+          if dst.ent:GetClass() == "ntx_mixer" then mixer = dst.ent break end
+        end
+      end
+      -- Nothing wired at all: keep whatever the legacy path established.
+      if mixer or wiredUpPort(e, "In") then
+        if e:GetMixer() ~= mixer then e:SetMixer(mixer) end
+      end
+    end
+  end
 
   -- Cabinets. Direct-to-amp keeps its channel; a series cabinet inherits the
   -- driver behind it; anything else resolves to the mixer at the head.
