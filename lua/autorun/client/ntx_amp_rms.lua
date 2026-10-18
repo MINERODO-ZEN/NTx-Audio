@@ -20,7 +20,9 @@ local nextSend = 0
 local announced = false
 
 -- The server tells us how often to report.
-net.AddReceiver("NTx.AmpRmsCadence", function()
+-- net.Receive, not a hypothetical AddReceiver: that is the name GMod actually
+-- has, and it is the same call every other receiver in this addon uses.
+net.Receive("NTx.AmpRmsCadence", function()
   local secs = net.ReadFloat()
   if secs <= 0 then return end
   cadence = math.Clamp(secs, 0.005, 1)

@@ -292,8 +292,12 @@ buildAmpUI = function(amp)
   label(scroll, "CHANNELS", COL_WARN, 18):Dock(TOP)
   local chanLabels = {}
   for _, ch in ipairs(amp:ActiveChannels()) do
+    -- Local copy of the loop variable. Lua 5.1 shares one upvalue across every
+    -- closure made in a loop, so without this every channel's dropdown sets the
+    -- bit for the LAST channel - which is why channel 1 could never leave MID.
+    local chan = ch
     local cr = row(scroll, 24)
-    local lbl = label(cr, string.format("CH%d", ch))
+    local lbl = label(cr, string.format("CH%d", chan))
     lbl:SetWide(40)
     lbl:Dock(LEFT)
     local bus = vgui.Create("DComboBox", cr)
@@ -301,18 +305,18 @@ buildAmpUI = function(amp)
     bus:Dock(LEFT)
     comboAdd(bus, "MID", 0)
     comboAdd(bus, "SUB", 1)
-    comboPick(bus, amp:ChannelIsSub(ch) and 1 or 0)
+    comboPick(bus, amp:ChannelIsSub(chan) and 1 or 0)
     bus.OnSelect = function(_, _, data)
       local mask = amp:GetBusMask()
       -- Named bitv, not bit: a local called bit would shadow the library the
       -- very next line calls.
-      local bitv = bit.lshift(1, ch - 1)
+      local bitv = bit.lshift(1, chan - 1)
       if tonumber(data) == 1 then mask = bit.bor(mask, bitv) else mask = bit.band(mask, bit.bnot(bitv)) end
       setAmp("busmask", mask)
     end
     local info = label(cr, "-", COL_DIM)
     info:Dock(FILL)
-    chanLabels[ch] = info
+    chanLabels[chan] = info
   end
 
   -- Cabinet patch on this amplifier.
