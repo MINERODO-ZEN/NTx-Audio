@@ -40,10 +40,11 @@ function TOOL:LeftClick(tr)
   if CLIENT then return true end
   local ply = self:GetOwner()
   local ent = tr.Entity
-  local _shift = NTx.ToolShift(ply)
-  print("[NTX DBG] LeftClick " .. (IsValid(ent) and ent:GetClass() .. ":" .. ent:EntIndex() or "nil") .. " shift=" .. tostring(_shift))
-  if _shift and NTx.OpenEntityGui(ply, ent) then return true end
-  return NTx.ToolLinkClick(ply, ent)
+  -- Left click opens the panel. It used to be shift-click to open and plain
+  -- click to link; wiring moved to the stock wire tool, so the gesture is gone
+  -- and there is nothing left for a plain click to do but open the panel.
+  print("[NTX DBG] LeftClick " .. (IsValid(ent) and ent:GetClass() .. ":" .. ent:EntIndex() or "nil"))
+  return NTx.OpenEntityGui(ply, ent)
 end
 
 -- Right: apply the input / bus settings to the aimed source entity.
@@ -76,26 +77,20 @@ function TOOL:RightClick(tr)
   return true
 end
 
--- Reload: detach, and forget any half-finished link.
+-- Reload: there is nothing to detach here any more. Disconnecting is done by
+-- deleting the wire, and writing SetAmp/SetMixer from a tool would just be
+-- overwritten by the next topology rebuild - which is exactly the bug that made
+-- the old gesture look like it worked sometimes and not others.
 function TOOL:Reload(tr)
   if CLIENT then return true end
   local ply = self:GetOwner()
   local ent = tr.Entity
-  ply:SetNWEntity("NtxSrc", NULL)
   if not IsValid(ent) then return false end
-  if ent:GetClass() == "ntx_speaker" and IsValid(ent:GetAmp()) then
-    ent:SetAmp(NULL)
-    ent:SetAmpChannel(0)
-    ply:ChatPrint("[NTx] Cabinet unlinked from its amplifier.")
-  elseif IsValid(ent:GetMixer()) then
-    local mixer = ent:GetMixer()
-    ent:SetMixer(NULL)
-    if mixer.RemoveChannel then mixer:RemoveChannel(ent) end
-    ply:ChatPrint("[NTx] " .. ent:GetClass() .. " unlinked from its mixer.")
-  else
-    return false
-  end
-  NTx.BroadcastGraph()
+  local cls = ent:GetClass()
+  if cls ~= "ntx_input_url" and cls ~= "ntx_mixer" and cls ~= "ntx_amplifier"
+    and cls ~= "ntx_speaker" and cls ~= "ntx_fallback_bus" then return false end
+  ply:ChatPrint("[NTx] Disconnect by deleting the wire on that entity "
+    .. "(stock wire tool), not by pressing reload here.")
   return true
 end
 
@@ -103,7 +98,7 @@ end
 function TOOL.BuildCPanel(panel)
   panel:AddControl("Header", { Description = "#tool.ntx_connection_tool.desc" })
   panel:AddControl("Label", {
-    Text = "Left-click: source, then destination (input/cabinet/bus -> mixer, cabinet -> amplifier, mixer -> amplifier opens the patch panel). Shift-click opens any NTx entity panel. Right-click an input or bus: apply its settings. Reload: unlink.",
+    Text = "Wiring is done with the stock wire tool: this addon's entities expose signal ports (mixer In1..In16/Out, amplifier Ch<N>In/Ch<N>Out, cabinet In/Out). Left-click opens the aimed entity's panel. Right-click an input or bus: apply its settings. This tool no longer links anything itself.",
   })
 
   panel:AddControl("Label", { Text = "INPUT  (right-click a ntx_input_url)" })

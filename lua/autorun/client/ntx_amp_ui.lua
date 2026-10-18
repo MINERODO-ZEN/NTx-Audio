@@ -687,3 +687,28 @@ concommand.Add("ntx_spk_list", function()
   table.sort(saved)
   print("[NTx] saved profiles: " .. (#saved > 0 and table.concat(saved, ", ") or "(none)"))
 end)
+-- Reports the raw bus bits and what the server-side field lookup resolves to.
+-- Three attempts at fixing the MID/SUB dropdown have failed, and "it looks
+-- wrong in the panel" cannot distinguish a UI problem from a message that never
+-- arrived or a write that was rejected. This prints the truth.
+concommand.Add("ntx_amp_bus", function(_, _, args)
+  local ent = Entity(tonumber(args[1] or 0) or 0)
+  if not IsValid(ent) or ent:GetClass() ~= "ntx_amplifier" then
+    print("[NTx] usage: ntx_amp_bus <amplifier entity index>")
+    return
+  end
+  local mask = ent:GetBusMask() or 0
+  local bits = {}
+  for i = 0, 7 do
+    if bit.band(mask, bit.lshift(1, i)) ~= 0 then bits[#bits + 1] = "CH" .. (i + 1) end
+  end
+  print(string.format("[NTx] amp %d profile=%q channels=%d BusMask=%d (%s)",
+    ent:EntIndex(), tostring(ent:GetProfile()),
+    math.floor(tonumber(ent:GetChannels()) or 0), mask,
+    #bits > 0 and table.concat(bits, ",") or "all MID"))
+  for _, ch in ipairs(ent:ActiveChannels()) do
+    print(string.format("    CH%d bus=%s sub=%s", ch,
+      ent:ChannelIsSub(ch) and "SUB" or "MID", tostring(ent:ChannelIsSub(ch))))
+  end
+  print("    server field lookup resolves: " .. tostring(NTx.AmpField("busmask") ~= nil))
+end)

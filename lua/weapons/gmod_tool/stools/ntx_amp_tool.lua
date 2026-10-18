@@ -41,10 +41,11 @@ function TOOL:LeftClick(tr)
   if CLIENT then return true end
   local ply = self:GetOwner()
   local ent = tr.Entity
-  local _shift = NTx.ToolShift(ply)
-  print("[NTX DBG] LeftClick " .. (IsValid(ent) and ent:GetClass() .. ":" .. ent:EntIndex() or "nil") .. " shift=" .. tostring(_shift))
-  if _shift and NTx.OpenEntityGui(ply, ent) then return true end
-  return NTx.ToolLinkClick(ply, ent)
+  -- Left click opens the panel. It used to be shift-click to open and plain
+  -- click to link; wiring moved to the stock wire tool, so the gesture is gone
+  -- and there is nothing left for a plain click to do but open the panel.
+  print("[NTX DBG] LeftClick " .. (IsValid(ent) and ent:GetClass() .. ":" .. ent:EntIndex() or "nil"))
+  return NTx.OpenEntityGui(ply, ent)
 end
 
 -- Right-click: stamp this panel's settings onto the aimed amplifier. Choosing a

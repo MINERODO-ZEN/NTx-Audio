@@ -201,102 +201,15 @@ local function canEdit(ply, ent)
 end
 NTx.CanEditRig = canEdit
 
--- The plain left-click gesture, shared by all three tools so linking behaves
--- identically no matter which one is held. First click picks the source, second
--- picks the destination. What the destination means is entity-specific: an
--- amplifier links a cabinet onto a channel (or, for a mixer source, opens the
--- per-channel patch picker instead of guessing), a mixer links anything.
-function NTx.ToolLinkClick(ply, ent)
-  if not IsValid(ply) or not IsValid(ent) then return false end
-  local cls = ent:GetClass()
-  if cls ~= "ntx_mixer" and cls ~= "ntx_speaker" and cls ~= "ntx_fallback_bus"
-    and cls ~= "ntx_input_url" and cls ~= "ntx_amplifier" then return false end
-  local src = ply:GetNWEntity("NtxSrc")
-
-  -- Amplifier as the destination: either a cabinet -> amplifier link, or a
-  -- mixer. A plain click LINKS; it never opens a dialog, because a link that
-  -- stops to ask a question is indistinguishable from the link being broken.
-  -- The bus-per-output picker is a shift-click away and stays there.
-  if cls == "ntx_amplifier" and IsValid(src) and src ~= ent then
-    if src:GetClass() == "ntx_mixer" then
-      if not canEdit(ply, ent) then
-        ply:ChatPrint("[NTx] You do not own that amplifier.")
-        return true
-      end
-      if NTx.ToolShift(ply) then
-        ply:ConCommand("ntx_amp_patch " .. ent:EntIndex() .. " " .. src:EntIndex())
-        ply:SetNWEntity("NtxSrc", NULL)
-        return true
-      end
-      -- Plain link: keep whatever the amplifier is already patched to. A
-      -- channel that was MID and is now SUB cannot keep its full-range boxes,
-      -- so those cabinets are unlinked rather than silently left fighting the
-      -- bus - the same rule the patch panel applies.
-      ent:SetMixer(src)
-      NTx.AmpSimDrop(ent)
-      local dropped = 0
-      for _, spk in ipairs(ents.FindByClass("ntx_speaker")) do
-        if IsValid(spk) and spk:GetAmp() == ent then
-          local ch = math.Clamp(math.floor(tonumber(spk:GetAmpChannel()) or 0), 1, 8)
-          local pair = ent:ChannelPair(ch)
-          if (spk:BusType() == "sub") ~= ent:ChannelIsSub(pair[1]) then
-            spk:SetAmp(NULL)
-            spk:SetAmpChannel(0)
-            dropped = dropped + 1
-          end
-        end
-      end
-      NTx.BroadcastGraph()
-      ply:ChatPrint("[NTx] Amplifier " .. ent:EntIndex() .. " -> mixer " .. src:EntIndex()
-        .. " (kept its buses and mode; shift-click to change them)"
-        .. (dropped > 0 and (", " .. dropped .. " cabinet(s) unlinked: wrong bus)") or ""))
-      ply:SetNWEntity("NtxSrc", NULL)
-      return true
-    end
-    if src:GetClass() == "ntx_speaker" then
-      if src:GetActive() then
-        ply:ChatPrint("[NTx] That cabinet is self-powered (ACTIVE): no amplifier in its chain.")
-        ply:SetNWEntity("NtxSrc", NULL)
-        return true
-      end
-      -- Channel 0 means "let the link pick", which is the safe default here: the
-      -- bus check in LinkSpeakerToAmp will refuse a mismatch rather than patch a
-      -- cabinet onto a channel that fights it.
-      local ok, why = NTx.LinkSpeakerToAmp(ply, src, ent, 0)
-      if ok then
-        ply:ChatPrint("[NTx] Cabinet " .. src:EntIndex() .. " -> amplifier "
-          .. ent:EntIndex() .. " ch" .. src:GetAmpChannel() .. " (" .. NTx.SpkOhmText(src) .. ").")
-      elseif why == "bus" then
-        local ch = src:GetAmpChannel()
-        ply:ChatPrint("[NTx] That channel is patched for "
-          .. (ent:ChannelIsSub(ch) and "SUB" or "MID") .. " and the cabinet is "
-          .. src:GetSpeakerType() .. ". Patch the amplifier to a mixer first.")
-      end
-      ply:SetNWEntity("NtxSrc", NULL)
-      return true
-    end
-    ply:SetNWEntity("NtxSrc", NULL)
-    return true
-  end
-
-  if cls == "ntx_mixer" and IsValid(src) and src ~= ent then
-    if NTx.LinkToMixer(ply, src, ent) then
-      ply:ChatPrint("[NTx] Linked " .. src:GetClass() .. " -> mixer.")
-      ply:SetNWEntity("NtxSrc", NULL)
-      return true
-    end
-    return true
-  end
-
-  -- Nothing pending, or the click is a repeat of the source: this click selects.
-  -- Anything linkable is a valid source, including an amplifier (a mixer can be
-  -- patched onto one next), so either click order links a cabinet.
-  ply:SetNWEntity("NtxSrc", ent)
-  ply:ChatPrint("[NTx] Selected " .. cls .. " [" .. ent:EntIndex()
-    .. "]. Click a mixer or an amplifier to link. Shift-click opens its panel.")
-  return true
-end
-
+-- The old tool-based link gesture is gone. Wiring is done with the stock wire
+-- tool, and the wire topology is the single source of truth for who drives
+-- whom. Keeping the gesture around meant a plain tool click still wrote
+-- SetMixer / SetAmp / SetAmpChannel, which the rebuild then overwrote - two
+-- systems disagreeing about the same rig, with the tool silently winning until
+-- the next rebuild.
+--
+-- The link helpers below remain reachable only from the net receivers, which
+-- still validate ownership.
 -- Link helper used by the toolgun.
 function NTx.LinkToMixer(ply, target, mixer)
   if not IsValid(target) or not IsValid(mixer) or mixer:GetClass() ~= "ntx_mixer" then return false end
