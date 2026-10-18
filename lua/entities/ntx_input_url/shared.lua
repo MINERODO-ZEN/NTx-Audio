@@ -13,8 +13,4 @@ function ENT:SetupDataTables()
   self:NetworkVar("Float", 1, "MaxDist", { KeyName = "maxdist", Edit = { type = "Float", min = 100, max = 10000, order = 2, category = "NTx" } })
   self:NetworkVar("Bool", 0, "Looping")
   self:NetworkVar("Entity", 0, "Mixer")
-
-function ENT:CreateWirePorts()
-  self.Outputs = WireLib.CreateSpecialOutputs(self, {"Out"}, {"Audio output level (0-1)"}, {"NORMAL"})
-end
 end

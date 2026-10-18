@@ -35,24 +35,8 @@ function ENT:SetupDataTables()
   -- One bit per channel: set = SUB bus, clear = MID bus. The amp reads the
   -- matching mixer bus, so the meters and the heat are honest about what the
   -- channel is actually driving.
-  self:NetworkVar("Int", 3, "Meters", { KeyName = "ampmeters", Edit = { type = "Combo", values = self.METERS, order = 11, category = "NTx Amp" } })
-
-function ENT:CreateWirePorts()
-  local inNames, inDesc, inTypes = {}, {}, {}
-  local outNames, outDesc, outTypes = {}, {}, {}
-  local n = math.Clamp(math.floor(self:GetChannels() or 2), 1, 8)
-  for i = 1, n do
-    inNames[#inNames + 1] = "Ch" .. i .. "In"
-    inDesc[#inDesc + 1] = "Amplifier channel " .. i .. " input (0-1)"
-    inTypes[#inTypes + 1] = "NORMAL"
-    outNames[#outNames + 1] = "Ch" .. i .. "Out"
-    outDesc[#outDesc + 1] = "Amplifier channel " .. i .. " output (0-1)"
-    outTypes[#outTypes + 1] = "NORMAL"
-  end
-  self.Inputs = WireLib.CreateSpecialInputs(self, inNames, inDesc, inTypes)
-  self.Outputs = WireLib.CreateSpecialOutputs(self, outNames, outDesc, outTypes)
-end
-end
+  self:NetworkVar("Int", 3, "BusMask", { KeyName = "busmask", Edit = { type = "Float", min = 0, max = 255, step = 1, order = 11, category = "NTx Amp" } })
+  self:NetworkVar("Int", 4, "Meters", { KeyName = "ampmeters", Edit = { type = "Combo", values = self.METERS, order = 12, category = "NTx Amp" } })
 
   -- Behaviour that differs between one amplifier and the next, each on its own
   -- switch rather than a single "realistic" flag: a car amplifier has no

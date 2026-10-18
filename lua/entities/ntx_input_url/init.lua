@@ -11,15 +11,6 @@ function ENT:Initialize()
   if IsValid(phys) then phys:Wake() end
   if self:GetInputVolume() == 0 then self:SetInputVolume(1) end
   if self:GetMaxDist() == 0 then self:SetMaxDist(1200) end
-  self:CreateWirePorts()
-end
-
-function ENT:Think()
-  self:NextThink(CurTime())
-  if WireLib then
-    WireLib.TriggerOutput(self, "Out", self:GetInputVolume())
-  end
-  return true
 end
 
 function ENT:SpawnFunction(ply, tr)
