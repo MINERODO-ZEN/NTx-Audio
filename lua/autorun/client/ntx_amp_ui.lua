@@ -667,18 +667,17 @@ concommand.Add("ntx_amp_bus", function(_, _, args)
     print("[NTx] usage: ntx_amp_bus <amplifier entity index>")
     return
   end
-  local mask = ent:GetBusMask() or 0
-  local bits = {}
-  for i = 0, 7 do
-    if bit.band(mask, bit.lshift(1, i)) ~= 0 then bits[#bits + 1] = "CH" .. (i + 1) end
-  end
-  print(string.format("[NTx] amp %d profile=%q channels=%d BusMask=%d (%s)",
+  print(string.format("[NTx] amp %d profile=%q channels=%d mixer=%s",
     ent:EntIndex(), tostring(ent:GetProfile()),
-    math.floor(tonumber(ent:GetChannels()) or 0), mask,
-    #bits > 0 and table.concat(bits, ",") or "all MID"))
+    math.floor(tonumber(ent:GetChannels()) or 0),
+    IsValid(ent:GetMixer()) and ent:GetMixer():EntIndex() or "none"))
   for _, ch in ipairs(ent:ActiveChannels()) do
-    print(string.format("    CH%d bus=%s sub=%s", ch,
-      ent:ChannelIsSub(ch) and "SUB" or "MID", tostring(ent:ChannelIsSub(ch))))
+    -- What the channel is actually fed, as decided by its wiring.
+    local id = ent:ChannelBusId(ch)
+    if id ~= nil then
+      print(string.format("    CH%d bus=%s (id %d)", ch, NTx.BusName(id), id))
+    else
+      print(string.format("    CH%d bus=NOT WIRED - wire MidL/MidR/SubL/SubR to Ch%dIn", ch, ch))
+    end
   end
-  print("    server field lookup resolves: " .. tostring(NTx.AmpField("busmask") ~= nil))
 end)
