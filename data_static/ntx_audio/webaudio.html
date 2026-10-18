@@ -124,6 +124,19 @@ function motionFrame(){
   }
 }
 function ntxPing(){ ntxReport({t:"pong"}); }
+// How often the page reports source RMS. The Lua side sets this from the
+// cadence the server assigned to this client: a player who owns an amplifier
+// needs every tick, anyone else is fine at a quarter of that. Reporting
+// faster than the consumer can use is wasted bridge traffic, and slower than
+// it needs makes the model lag the music.
+var RMS_GATE=0.05;
+function ntxSetMeterInterval(secs){
+  var s=parseFloat(secs);
+  // Clamped hard: a zero would report every animation frame, and anything
+  // above a second is slower than any consumer wants.
+  if(isFinite(s)&&s>0.002&&s<1){ RMS_GATE=s; }
+  return RMS_GATE;
+}
 // Boot handshake: proves this script parsed and ran, and retries until the
 // Lua bridge exists. Without it a parse error is indistinguishable from a
 // quiet page, because the onerror handler lives in the broken script too.
@@ -379,7 +392,7 @@ function ntxUpdate(s){
       C.tapAn.getByteTimeDomainData(rmsBuf);
       for(var z=0;z<rmsBuf.length;z++){ var dv=rmsBuf[z]-128; sumSq+=dv*dv; }
       var rms=Math.sqrt(sumSq/rmsBuf.length)/128;
-      if(!C.lastRmsAt||(C.ctx.currentTime-C.lastRmsAt)>0.05){
+      if(!C.lastRmsAt||(C.ctx.currentTime-C.lastRmsAt)>RMS_GATE){
         C.lastRmsAt=C.ctx.currentTime;
         ntxReport({t:"rms",v:Math.round(rms*1000)/1000,c:clipSeen});
       }

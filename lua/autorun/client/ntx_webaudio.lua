@@ -275,6 +275,17 @@ local function ensurePage(pkey, url)
   end
   P = { panel = panel, url = url, registered = false }
   NTx.WebAudio.Pages[pkey] = P
+  -- A page born after the server assigned this client a cadence would never be
+  -- told its interval and would keep the built-in 20 Hz, so apply it here too.
+  -- ntx_amp_rms owns the cadence value.
+  if NTx.RmsCadence then
+    timer.Simple(1, function()
+      if IsValid(P.panel) then
+        pcall(P.panel.Call, P.panel,
+          "ntxSetMeterInterval(" .. string.format("%.4f", NTx.RmsCadence) .. ")")
+      end
+    end)
+  end
   local keyCopy = pkey
   panel.ConsoleMessage = function(_, msg)
     local c = GetConVar("ntx_webaudio_debug")

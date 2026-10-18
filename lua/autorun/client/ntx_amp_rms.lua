@@ -22,7 +22,18 @@ local announced = false
 -- The server tells us how often to report.
 net.AddReceiver("NTx.AmpRmsCadence", function()
   local secs = net.ReadFloat()
-  if secs > 0 then cadence = math.Clamp(secs, 0.005, 1) end
+  if secs <= 0 then return end
+  cadence = math.Clamp(secs, 0.005, 1)
+  -- Published so a page created later picks the same interval up.
+  NTx.RmsCadence = cadence
+  -- The page samples the analyser on its own timer, so it has to be told the
+  -- same interval; otherwise it reports at its old fixed 20 Hz and a tick-rate
+  -- consumer would only ever see aliased level steps.
+  for _, p in pairs(NTx.WebAudio.Pages or {}) do
+    if p and p.panel and IsValid(p.panel) then
+      pcall(p.panel.Call, p.panel, "ntxSetMeterInterval(" .. string.format("%.4f", cadence) .. ")")
+    end
+  end
 end)
 
 -- Claim (or withdraw) a cadence from the server.
