@@ -410,8 +410,14 @@ local function stepAmp(amp, now, dt)
   local loadFrac = math.Clamp(totalOut / ratedTot, 0, 1.5)
   st.loadFrac = approach(st.loadFrac or 0, loadFrac, dt, 1)
   local pf = NTx.AmpPf(p, st.loadFrac)
+  -- Real power taken from the mains: output plus what the amplifier itself
+  -- burns. This, not st.totalW, is the figure a power-line simulator wants -
+  -- totalW is dissipation alone and would under-read the grid by exactly the
+  -- output power.
   local acWatts = totalOut + totalDiss
-  st.mainsA = math.Clamp(acWatts / math.max(mains * pf, 1), 0, 100)
+  st.pinW = acWatts
+  st.loadA = math.Clamp(acWatts / math.max(mains * pf, 1), 0, 100)
+  st.mainsA = st.loadA
   st.pf = pf
   st.rail = railAny
   st.totalW = totalDiss
@@ -578,6 +584,9 @@ hook.Add("Think", "NTx.AmpSim", function()
           NTx.WireOut(amp, "PF", st.pf or 0)
           NTx.WireOut(amp, "RailV", st.rail or 0)
           NTx.WireOut(amp, "TotalW", st.totalW or 0)
+          -- Grid-facing quantities: real input power and total load current.
+          NTx.WireOut(amp, "PinW", st.pinW or 0)
+          NTx.WireOut(amp, "LoadA", st.loadA or 0)
           NTx.WireOut(amp, "TempC", st.tsink or 22)
           NTx.WireOut(amp, "TempDevC", st.tdevMax or 22)
           NTx.WireOut(amp, "FanRpm", st.fanRpm or 0)

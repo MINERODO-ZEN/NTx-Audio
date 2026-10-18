@@ -172,40 +172,54 @@ end
 -- from Initialize in both realms and whenever the channel count changes.
 function ENT:CreateWirePorts()
   local n = math.Clamp(math.floor(self:GetChannels() or 2), 1, 8)
-  local inNames = { "MainsV", "MainsA", "MainsHz" }
-  local inDesc = { "Mains voltage, volts RMS", "Mains current, amperes", "Mains frequency, hertz" }
+  local inNames, inDesc = {}, {}
   local outNames, outDesc = {}, {}
-  local function add(name, desc)
-    outNames[#outNames + 1] = name
-    outDesc[#outDesc + 1] = desc
+  local function add(list, dlist, name, desc)
+    list[#list + 1] = name
+    dlist[#dlist + 1] = desc
   end
-  -- Per-channel signal in/out. These are the ports the topology walk follows:
-  -- a mixer's "Out" lands on Ch<N>In, and Ch<N>Out feeds the cabinets.
+
+  -- ORDER MATTERS. WireSetup types every port up to sigCount as signal, so the
+  -- signal ports have to come FIRST. Getting this wrong types the mains inputs
+  -- as signal too, which then refuses a wire from an external power-line
+  -- simulator (its voltage output is NORMAL, not NTXSIG).
+  --
+  -- Signal in/out is the pair the topology walk follows: a mixer's "Out" lands
+  -- on Ch<N>In, and Ch<N>Out feeds the cabinets.
   for i = 1, n do
-    inNames[#inNames + 1] = "Ch" .. i .. "In"
-    inDesc[#inDesc + 1] = "Signal level into channel " .. i .. ", 0 to 1"
+    add(inNames, inDesc, "Ch" .. i .. "In", "Signal level into channel " .. i .. ", 0 to 1")
+  end
+  -- Numeric telemetry, NORMAL type, so external wiring can reach them.
+  add(inNames, inDesc, "MainsV", "Mains voltage, volts RMS")
+  add(inNames, inDesc, "MainsA", "Mains current, amperes")
+  add(inNames, inDesc, "MainsHz", "Mains frequency, hertz")
+
+  for i = 1, n do
+    add(outNames, outDesc, "Ch" .. i .. "Out", "Output signal level on channel " .. i .. ", 0 to 1")
   end
   for i = 1, n do
-    add("Ch" .. i .. "Out", "Output signal level on channel " .. i .. ", 0 to 1")
-    add("Ch" .. i .. "Amps", "Output current, amperes RMS (load)")
-    add("Ch" .. i .. "Volt", "Output voltage, volts RMS")
-    add("Ch" .. i .. "Watt", "Output power, watts")
-    add("Ch" .. i .. "Ohm", "Measured load, ohms")
-    add("Ch" .. i .. "Clip", "1 while clipping, 0 otherwise")
-    add("Ch" .. i .. "Protect", "1 while protecting, 0 otherwise")
+    add(outNames, outDesc, "Ch" .. i .. "Amps", "Output current, amperes RMS (load)")
+    add(outNames, outDesc, "Ch" .. i .. "Volt", "Output voltage, volts RMS")
+    add(outNames, outDesc, "Ch" .. i .. "Watt", "Output power, watts")
+    add(outNames, outDesc, "Ch" .. i .. "Ohm", "Measured load, ohms")
+    add(outNames, outDesc, "Ch" .. i .. "Clip", "1 while clipping, 0 otherwise")
+    add(outNames, outDesc, "Ch" .. i .. "Protect", "1 while protecting, 0 otherwise")
   end
-  add("MainsV", "Mains voltage in use, volts RMS")
-  add("MainsA", "Mains current draw, amperes RMS")
-  add("PF", "Power factor (PFC supply near 1.0)")
-  add("RailV", "Internal supply rail, volts DC")
-  add("TotalW", "Total dissipation, watts")
-  add("TempC", "Heatsink temperature, C")
-  add("TempDevC", "Hottest output device, C")
-  add("FanRpm", "Fan speed, rpm")
-  add("GainRedDb", "Thermal gain reduction, dB")
-  add("Damage", "Cumulative damage, 0 to 1")
-  add("FaultCode", "0 none / 1 brownout / 2 overvoltage / 3 no mains / 4 thermal / 5 overload / 6 short / 7 DC / 8 burnt")
-  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, 3 + n, 2 * n)
+  add(outNames, outDesc, "MainsV", "Mains voltage in use, volts RMS")
+  add(outNames, outDesc, "MainsA", "Mains current draw, amperes RMS")
+  add(outNames, outDesc, "PF", "Power factor (PFC supply near 1.0)")
+  add(outNames, outDesc, "PinW", "Real power drawn from the mains, watts (output plus overhead)")
+  add(outNames, outDesc, "LoadA", "Total load current on the incoming supply, amperes RMS")
+  add(outNames, outDesc, "RailV", "Internal supply rail, volts DC")
+  add(outNames, outDesc, "TotalW", "Dissipation only, watts - heat, NOT what the supply delivers")
+  add(outNames, outDesc, "TempC", "Heatsink temperature, C")
+  add(outNames, outDesc, "TempDevC", "Hottest output device, C")
+  add(outNames, outDesc, "FanRpm", "Fan speed, rpm")
+  add(outNames, outDesc, "GainRedDb", "Thermal gain reduction, dB")
+  add(outNames, outDesc, "Damage", "Cumulative damage, 0 to 1")
+  add(outNames, outDesc, "FaultCode", "0 none / 1 brownout / 2 overvoltage / 3 no mains / 4 thermal / 5 overload / 6 short / 7 DC / 8 burnt")
+  -- Signal ports are the n Ch<N>In / Ch<N>Out pairs at the head of each list.
+  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, n, n)
 end
 
 function ENT:OnChannelsChanged()

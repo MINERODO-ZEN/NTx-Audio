@@ -1,0 +1,12 @@
+{
+  "name": "ntx-build-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline build tools for the NTx addon. Converts PAC3 lamp layouts into a baked Lua table the game loads directly.",
+  "scripts": {
+    "build:leds": "node build_pac3_leds.js"
+  },
+  "dependencies": {
+    "luaparse": "0.3.1"
+  }
+}

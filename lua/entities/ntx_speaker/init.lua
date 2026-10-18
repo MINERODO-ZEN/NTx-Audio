@@ -43,6 +43,33 @@ function ENT:TriggerInput(name, value)
   self.WireIn = math.Clamp(tonumber(value) or 0, 0, 2)
 end
 
+-- Every OTHER cabinet in this speaker's chain, walked both ways.
+--
+-- "Chain" means the run of cabinets joined by the In/Out signal ports, so
+-- A -> B -> C gives all three the same two-element list. Walking stops at
+-- anything that is not a cabinet (an amplifier, a mixer), which is what keeps
+-- two separate stacks from being reported as one chain. The `seen` set guards
+-- against a loop someone wires by accident.
+local function chainOf(self)
+  local out, seen = {}, {}
+  seen[self] = true
+
+  local function step(ent, port)
+    while IsValid(ent) and not seen[ent] do
+      if ent:GetClass() ~= "ntx_speaker" then return end
+      seen[ent] = true
+      out[#out + 1] = ent
+      ent = NTx.WireUpstream(ent, port)
+    end
+  end
+
+  step(NTx.WireUpstream(self, "In"), "In")
+  for _, d in ipairs(NTx.WireDownstream(self, "Out")) do
+    step(d.ent, "In")
+  end
+  return out
+end
+
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
   local out = 0
@@ -55,6 +82,18 @@ function ENT:Think()
   if out ~= self.WireOut then
     self.WireOut = out
     NTx.WireOut(self, "Out", out)
+  end
+
+  -- Republished whenever the chain changes, which link/unlink hooks cover.
+  -- The signature is built from ent-indices, not the entities themselves:
+  -- table.concat cannot stringify entity userdata and would error outright.
+  local chain = chainOf(self)
+  local ids = {}
+  for i, e in ipairs(chain) do ids[i] = e:EntIndex() end
+  local sig = table.concat(ids, ",")
+  if sig ~= self.WireLinkSig then
+    self.WireLinkSig = sig
+    NTx.WireOut(self, "Link", chain)
   end
 end
 

@@ -77,19 +77,26 @@ function ENT:CreateWirePorts()
   -- Signal first: "In" is what the topology walk follows, "Out" is how cabinets
   -- are daisy-chained. Both carry a plain 0-1 level; the actual audio is decoded
   -- client side, so the wire is topology, not a signal path.
+  --
+  -- "Link" is an ARRAY of entities: every OTHER cabinet in this speaker's
+  -- chain, walked both upstream and downstream. It exists so a chain can be
+  -- inspected or handed to another addon (a delay rack, a metering entity)
+  -- without anyone having to walk Inputs[].Src by hand. Values are server-side
+  -- only, like every other Wiremod port value.
   local inNames = { "In" }
   local inDesc = { "Signal level in, 0 to 1" }
   local outNames = {
-    "Out", "TempC", "Damage", "Blown", "PRms", "PPeak", "PRated", "PPeakRated",
+    "Out", "Link", "TempC", "Damage", "Blown", "PRms", "PPeak", "PRated", "PPeakRated",
     "LoadOhm", "SeriesOhm", "PrmsLimit", "PpeakLimit",
   }
   local outDesc = {
     "Signal level out, 0 to 1 (pass-through for series cabinets)",
+    "Every other cabinet in this chain [ARRAY]",
     "Voice coil temperature, C", "Cumulative damage, 0 to 1", "1 once the driver is burnt",
     "Power delivered right now, watts RMS", "Power delivered right now, watts peak",
     "Continuous (RMS) power rating, watts", "Peak power rating, watts",
     "Cabinet impedance, ohms", "Impedance of this series group, ohms",
     "RMS power limit, watts", "Peak power limit, watts",
   }
-  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, 1, 1)
+  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, 1, 1, { [2] = "ARRAY" })
 end

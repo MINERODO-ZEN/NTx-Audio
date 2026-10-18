@@ -604,17 +604,25 @@ end
 
 -- sigNames/nSig marks the leading ports as signal-level so they get the custom
 -- type; everything else stays NORMAL telemetry.
-function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts)
+--
+-- outOverrides maps an output INDEX to an explicit type name, for the ports that
+-- are neither signal nor plain number - the speaker's ARRAY link output, for
+-- instance. Overrides win over the signal heuristic.
+function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts, outOverrides)
   if not Wire_CreateInputs or not Wire_CreateOutputs then return false end
   inNames, inDesc = inNames or {}, inDesc or {}
   outNames, outDesc = outNames or {}, outDesc or {}
   registerWireTypes()
   local sig = NTx.WIRE_SIG_TYPE
 
-  local function typeList(names, count)
+  local function typeList(names, count, overrides)
     local t = {}
     for i = 1, #names do
-      t[i] = (tonumber(count) and i <= tonumber(count)) and sig or "NORMAL"
+      if overrides and overrides[i] then
+        t[i] = overrides[i]
+      else
+        t[i] = (tonumber(count) and i <= tonumber(count)) and sig or "NORMAL"
+      end
     end
     return t
   end
@@ -627,7 +635,7 @@ function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts)
   if #outNames > 0 then
     local fn = (ent.Outputs and WireLib.AdjustSpecialOutputs) and WireLib.AdjustSpecialOutputs
       or WireLib.CreateSpecialOutputs
-    wireAdjust(fn, ent, outNames, typeList(outNames, sigOuts), outDesc)
+    wireAdjust(fn, ent, outNames, typeList(outNames, sigOuts, outOverrides), outDesc)
   end
   return true
 end

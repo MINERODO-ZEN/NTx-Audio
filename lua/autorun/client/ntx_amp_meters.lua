@@ -428,16 +428,25 @@ end
 local LED_NATIVE = 1.37      -- models/led.mdl bounding size, in model units
 local LED_PX = 12            -- target lamp diameter, in virtual panel pixels
 local LED_LIFT = 0.5         -- how far the domes sit off the chassis face
+-- PAC3 layouts carry a position but no diameter, so lamps there are drawn at
+-- a fixed fraction of the led.mdl native size. Close enough to the authored
+-- dome on a rack chassis, and it cannot drift with the chassis dimensions the
+-- way the panel layout does.
+local PAC3_LED_SCALE = 0.05
 
 local ledModels = {}         -- amp entity -> its cached ClientsideModel
 local ledMats = {}           -- quantised colour -> material
 
-local function ledMaterial(col, alpha)
+-- col is the lit colour and may be nil for a dark lamp, in which case `lens`
+-- (the tint PAC3 recorded) supplies the plastic colour. A dark lamp is never
+-- pure black: a lens keeps its own colour when the emitter is off.
+local function ledMaterial(col, alpha, lens)
   alpha = math.Clamp(tonumber(alpha) or 0, 0, 255)
   local r, g, b
   if alpha == 0 then
-    -- An unlit lamp is not black: the lens keeps its own plastic colour.
-    r, g, b = OFF.r, OFF.g, OFF.b
+    local base = lens or OFF
+    -- Off lamps read as dark tinted plastic, not as their lit colour.
+    r, g, b = base.r * 0.28, base.g * 0.28, base.b * 0.28
   else
     local f = alpha / 255
     r, g, b = col.r * f, col.g * f, col.b * f
@@ -528,7 +537,50 @@ end
 -- model space (x depth, y width, z height), so the face plane is at max x and
 -- the strip is centred on the bounding box, then scaled so the whole virtual
 -- panel fits the real face.
+--
+-- Two layout sources. A baked PAC3 layout wins when present, because it places
+-- lamps in model space and so works for any chassis. Without one, the
+-- virtual-panel layout above is used, which keeps every amplifier that has never
+-- been authored in PAC3 looking exactly as it did.
+local function pac3LampsFor(ent)
+  if not NTx.Pac3Lamps then return nil end
+  local ok, lamps = pcall(NTx.Pac3Lamps, ent)
+  if ok and lamps and #lamps > 0 then return lamps end
+  return nil
+end
+
+local function drawPac3Lamps(ent, rec, lamps)
+  local model = ledModels[ent]
+  if not IsValid(model) then
+    model = ClientsideModel("models/led.mdl", RENDERGROUP_OTHER)
+    if not IsValid(model) then return end
+    model:SetNoDraw(true)
+    ledModels[ent] = model
+  end
+  for _, lamp in ipairs(lamps) do
+    local alpha, col = NTx.Pac3LampState(ent, lamp, rec)
+    -- Unlit lamps keep the lens tint PAC3 gave them; lit lamps take the
+    -- semantic colour so the world matches the Derma panel.
+    local base = col or lamp.lens or OFF
+    -- A PAC3 position is model space, so the chassis transform does the work
+    -- the virtual-panel arithmetic used to do.
+    model:SetPos(ent:LocalToWorld(lamp.pos))
+    model:SetAngles(ent:GetAngles() + lamp.ang)
+    -- Scale from the model itself rather than a panel constant: PAC3 does not
+    -- record a diameter, so match the native led.mdl at a fixed size.
+    model:SetModelScale(PAC3_LED_SCALE, 0)
+    render.MaterialOverride(ledMaterial(base, alpha))
+    model:DrawModel()
+  end
+  render.MaterialOverride()
+end
+
 function NTx.DrawAmpWorldLeds(ent, rec)
+  local lamps = pac3LampsFor(ent)
+  if lamps then
+    return drawPac3Lamps(ent, rec, lamps)
+  end
+
   local mn, mx = ent:GetModelBounds()
   if not mn or not mx then return end
   local size = mx - mn
