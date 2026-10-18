@@ -270,39 +270,17 @@ buildAmpUI = function(amp)
     return nil
   end, setAmp)
 
-  -- Per channel rows. The numbers are refreshed from the live record rather
-  -- than baked in at build time: this panel is how you watch a channel fold back.
+  -- Per channel rows. Read-only: the bus is whatever the mixer published on
+  -- Ch<N>Bus, so there is nothing here to set. A writable control here is what
+  -- fought the wiring and reverted.
   label(scroll, "CHANNELS", COL_WARN, 18):Dock(TOP)
   local chanLabels = {}
   for _, ch in ipairs(amp:ActiveChannels()) do
-    -- Local copy of the loop variable. Lua 5.1 shares one upvalue across every
-    -- closure made in a loop, so without this every channel's dropdown sets the
-    -- bit for the LAST channel - which is why channel 1 could never leave MID.
     local chan = ch
     local cr = row(scroll, 24)
     local lbl = label(cr, string.format("CH%d", chan))
     lbl:SetWide(40)
     lbl:Dock(LEFT)
-    local bus = vgui.Create("DComboBox", cr)
-    bus:SetWide(70)
-    bus:Dock(LEFT)
-    comboAdd(bus, "MID", 0)
-    comboAdd(bus, "SUB", 1)
-    comboPick(bus, amp:ChannelIsSub(chan) and 1 or 0)
-    bus.OnSelect = function()
-      -- Read the value back out of the combo rather than trusting the argument
-      -- GMod passed: the argument did not carry it, so this always saw MID.
-      local want = tonumber(comboGet(bus))
-      local mask = amp:GetBusMask()
-      -- Named bitv, not bit: a local called bit would shadow the library the
-      -- very next line calls.
-      local bitv = bit.lshift(1, chan - 1)
-      if want == 1 then mask = bit.bor(mask, bitv) else mask = bit.band(mask, bit.bnot(bitv)) end
-      chat.AddText(Color(255, 200, 90),
-        "[NTx] CH" .. chan .. " -> " .. (want == 1 and "SUB" or "MID")
-        .. " (sending busmask=" .. mask .. ")")
-      setAmp("busmask", mask)
-    end
     local info = label(cr, "-", COL_DIM)
     info:Dock(FILL)
     chanLabels[chan] = info
@@ -343,11 +321,17 @@ buildAmpUI = function(amp)
         if active == ch then idx = i end
       end
       c = rec and rec.ch[idx]
-      info:SetText(string.format("%s  %.1f A  %.0f W  %s",
+      -- The bus comes from the wiring, so it is shown, not set. An unwired
+      -- channel has no identifier at all and says so rather than claiming MID.
+      local busName = amp.ChannelBusId and amp:ChannelBusId(ch)
+      local wired = busName ~= nil
+      info:SetText(string.format("%s  %.1f A  %.0f W  %s%s",
         (c and (c.z < 1000)) and string.format("%.1f ohm", c.z) or "open",
         c and c.i or 0, c and c.w or 0,
+        wired and (NTx.BusName(busName) .. " ") or "",
         c and c.protect and "PROTECT" or (c and c.clip and "CLIP" or "")))
-      info:SetTextColor(c and (c.protect or c.clip) and COL_WARN or COL_DIM)
+      info:SetTextColor(not wired and COL_WARN
+        or (c and (c.protect or c.clip) and COL_WARN or COL_DIM))
     end
     for spk, info in pairs(spkLabels) do
       local ss = rec and rec.spk[spk:EntIndex()]
@@ -380,29 +364,31 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
   label(scroll, "What will each output drive? The amplifier takes its level from that bus.", COL_DIM, 32):Dock(TOP)
 
   local usable = amp:UsableChannels()
-  local combos = {}
+  local busInfo = {}
   for _, ch in ipairs(amp:ActiveChannels()) do
-    local cr = row(scroll, 28)
-    local lbl = label(cr, "Output " .. ch)
+    local chan = ch
+    local cr = row(scroll, 26)
+    local lbl = label(cr, "Output " .. chan)
     lbl:SetWide(70)
     lbl:Dock(LEFT)
-    local bus = vgui.Create("DComboBox", cr)
-    bus:Dock(FILL)
-    comboAdd(bus, "MID cabinets", 0)
-    comboAdd(bus, "SUB cabinets", 1)
-    -- Pre-select from whatever is already patched, which is right most of the
-    -- time and is a starting point rather than a decision.
-    local guess = amp:ChannelIsSub(ch) and 1 or 0
-    for _, spk in ipairs(ents.FindByClass("ntx_speaker")) do
-      if IsValid(spk) and spk:GetAmp() == amp
-        and (NTx.AmpSpeakerChannel(amp, spk) == ch) then
-        guess = (spk:BusType() == "sub") and 1 or 0
-        break
+    local info = label(cr, "-", COL_DIM)
+    info:Dock(FILL)
+    busInfo[chan] = info
+  end
+  -- Refreshed with the rest of the panel; see the update loop below.
+  local function refreshBusInfo()
+    for ch, info in pairs(busInfo) do
+      local id = amp.ChannelBusId and amp:ChannelBusId(ch)
+      if id ~= nil then
+        info:SetText(NTx.BusName(id))
+        info:SetTextColor(COL_OK)
+      else
+        info:SetText("no bus wired to this channel")
+        info:SetTextColor(COL_WARN)
       end
     end
-    comboPick(bus, guess)
-    combos[ch] = bus
   end
+  refreshBusInfo()
 
   local mrow = row(scroll, 28)
   local modeLbl = label(mrow, "Mode")
@@ -441,18 +427,13 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
   go:Dock(BOTTOM)
   go:SetText("Link amplifier to mixer")
   go.DoClick = function()
-    local mask = 0
-    for ch, bus in pairs(combos) do
-      -- comboGet, not GetSelectedID: SUB is choice index 2 but value 1, so
-      -- comparing the index to 1 sent every channel as the opposite bus.
-      if tonumber(comboGet(bus)) == 1 then mask = bit.bor(mask, bit.lshift(1, ch - 1)) end
-    end
+    -- No bus mask: each channel's bus comes from the mixer's identifier on
+    -- Ch<N>Bus. This sends the mixer patch, mode and tap only.
     net.Start("NTx.AmpEdit")
     net.WriteEntity(amp)
     net.WriteString("link")
     net.WriteEntity(IsValid(mixer) and mixer or NULL)
-    net.WriteUInt(mask, 8)
-    -- Same index/value mix-up: the server reads these as raw values.
+    net.WriteUInt(0, 8)
     net.WriteUInt(math.Clamp(tonumber(comboGet(mode)) or 0, 0, 3), 2)
     net.WriteUInt(math.Clamp(tonumber(comboGet(hiz)) or 0, 0, 240), 8)
     net.SendToServer()

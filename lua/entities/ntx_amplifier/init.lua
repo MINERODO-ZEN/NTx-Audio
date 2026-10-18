@@ -80,8 +80,16 @@ function ENT:TriggerInput(name, value)
   else
     local ch = NTx.WireChannelOf and NTx.WireChannelOf(name) or nil
     if ch then
-      self.WireSignal = self.WireSignal or {}
-      self.WireSignal[ch] = math.Clamp(v, 0, 2)
+      local v2 = tonumber(value)
+      if name:match("Bus$") then
+        -- The bus identifier. This is what makes the channel's type a
+        -- consequence of the wiring rather than of a panel setting.
+        self.BusIds = self.BusIds or {}
+        self.BusIds[ch] = NTx.BusClamp(v2)
+      else
+        self.WireSignal = self.WireSignal or {}
+        self.WireSignal[ch] = math.Clamp(v2 or 0, 0, 2)
+      end
     end
   end
 end

@@ -173,7 +173,12 @@ local function stepAmp(amp, now, dt)
   local damageEnabled = NTx.AmpDamageEnabled()
   local crest = NTx.AmpCrestDb(amp:GetCrestDb())
   local hizV = math.floor(tonumber(amp:GetHizVolt()) or 0)
-  local busMask = amp:GetBusMask()
+  -- The bus each channel is fed is derived from the mixer's published
+  -- identifier, so the simulation follows the wiring rather than a
+  -- hand-set bitfield that could disagree with it.
+  local function channelIsSub(ch)
+    return amp.ChannelIsSub and amp:ChannelIsSub(ch) or false
+  end
 
   -- Mains and the supply's opinion of it.
   local mains = amp:MainsVoltage(NTx.AmpNominalMains())
@@ -200,7 +205,7 @@ local function stepAmp(amp, now, dt)
     local mixer = amp:GetMixer()
     if IsValid(mixer) then
       for _, ch in ipairs(amp:ActiveChannels()) do
-        local bus = bit.band(busMask, bit.lshift(1, ch - 1)) ~= 0 and "sub" or "mid"
+        local bus = channelIsSub(ch) and "sub" or "mid"
         if channelInput(amp, ch, mixer, bus) > 0.001 then quiet = false break end
       end
     end
@@ -220,7 +225,7 @@ local function stepAmp(amp, now, dt)
     local c = st[ch]
     local pair = amp:ChannelPair(ch)
     local mode = NTx.AmpMode(p, amp:GetMode())
-    local isSub = bit.band(busMask, bit.lshift(1, ch - 1)) ~= 0
+    local isSub = channelIsSub(ch)
 
     -- Load: every cabinet assigned to either half of a fused pair.
     local list, spkEnts = {}, {}

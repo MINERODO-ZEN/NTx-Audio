@@ -48,16 +48,16 @@ function NTx.WireDownstream(ent, port)
   return out
 end
 
--- "Ch3In" or "Ch3Out" -> 3. Returns nil for anything else.
+-- "Ch3In", "Ch3Out" or "Ch3Bus" -> 3. Returns nil for anything else.
 --
--- Both directions matter. The amplifier's own TriggerInput is handed the input
--- port name, but directAmpChannel reads the SOURCE port of whatever is wired to
--- a cabinet, which is an output name. Matching only "In" meant a cabinet wired
--- to Ch2Out resolved to no channel at all and fell through to the first
--- matching bus - which is why everything ended up on channel 1.
+-- All three directions matter. The amplifier's own TriggerInput is handed its
+-- input port names, directAmpChannel reads the SOURCE port of whatever is wired
+-- to a cabinet (an output name), and the bus identifier arrives as Ch<N>Bus.
+-- Matching only "In" meant a cabinet wired to Ch2Out resolved to no channel and
+-- fell through to the first matching bus - why everything ended up on channel 1.
 function NTx.WireChannelOf(port)
   if type(port) ~= "string" then return nil end
-  local n = port:match("^Ch(%d+)In$") or port:match("^Ch(%d+)Out$")
+  local n = port:match("^Ch(%d+)In$") or port:match("^Ch(%d+)Out$") or port:match("^Ch(%d+)Bus$")
   if not n then return nil end
   return math.Clamp(tonumber(n), 1, 8)
 end

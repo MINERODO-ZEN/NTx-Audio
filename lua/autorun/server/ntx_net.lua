@@ -450,16 +450,17 @@ net.Receive("NTx.AmpEdit", function(_, ply)
     -- Cabinet bus assignment plus the amplifier's mode and tap, sent together
     -- so one undo step covers the whole patch.
     --
-    -- A NULL mixer is allowed. It means "no mixer patched yet", and the bus
-    -- mask, mode and tap still have to apply - previously the early return here
-    -- threw the mask away with everything else, which is why picking a bus in
-    -- the patch window appeared to do nothing until a mixer was selected.
+    -- A NULL mixer is allowed: it means "not patched yet", and mode and tap
+    -- still apply.
+    --
+    -- The bus mask is read and discarded. What bus a channel carries now comes
+    -- from the mixer's identifier arriving on Ch<N>Bus, so honouring a mask from
+    -- a panel would let the UI and the wiring disagree again.
     local mixer = net.ReadEntity()
     mixer = (mixer:GetClass() == "ntx_mixer") and mixer or NULL
-    local mask = net.ReadUInt(8)
+    net.ReadUInt(8) -- bus mask: obsolete, kept for the wire format
     local mode = net.ReadUInt(2)
     local hiz = net.ReadUInt(8)
-    amp:SetBusMask(mask)
     amp:SetMode(mode)
     amp:SetHizVolt(hiz)
     amp:SetMixer(mixer)

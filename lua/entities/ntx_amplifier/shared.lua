@@ -136,19 +136,6 @@ function ENT:UsableChannels()
 end
 
 -- Does this channel take SUB cabinets? Bit n of BusMask.
-function ENT:ChannelIsSub(ch)
-  return bit.band(self:GetBusMask(), bit.lshift(1, math.max(ch, 1) - 1)) ~= 0
-end
-
-function ENT:SetChannelSub(ch, sub)
-  local m = self:GetBusMask()
-  if sub then
-    m = bit.bor(m, bit.lshift(1, math.max(ch, 1) - 1))
-  else
-    m = bit.band(m, bit.bnot(bit.lshift(1, math.max(ch, 1) - 1)))
-  end
-  self:SetBusMask(m)
-end
 
 -- Channels that feed this output, honouring bridge/parallel pairing.
 function ENT:ChannelPair(ch)
@@ -184,10 +171,14 @@ function ENT:CreateWirePorts()
   -- as signal too, which then refuses a wire from an external power-line
   -- simulator (its voltage output is NORMAL, not NTXSIG).
   --
-  -- Signal in/out is the pair the topology walk follows: a mixer's "Out" lands
-  -- on Ch<N>In, and Ch<N>Out feeds the cabinets.
+  -- Signal in/out is the pair the topology walk follows: a mixer's bus level
+  -- lands on Ch<N>In and Ch<N>Bus feeds the cabinets, and Ch<N>Out drives
+  -- whatever is on that channel's outputs. The identifier beside the level is
+  -- what tells the amplifier what bus it is being fed.
   for i = 1, n do
     add(inNames, inDesc, "Ch" .. i .. "In", "Signal level into channel " .. i .. ", 0 to 1")
+    add(inNames, inDesc, "Ch" .. i .. "Bus", "Bus identifier for channel " .. i
+      .. " (0 MidL / 1 MidR / 2 SubL / 3 SubR)")
   end
   -- Numeric telemetry, NORMAL type, so external wiring can reach them.
   add(inNames, inDesc, "MainsV", "Mains voltage, volts RMS")
@@ -218,8 +209,29 @@ function ENT:CreateWirePorts()
   add(outNames, outDesc, "GainRedDb", "Thermal gain reduction, dB")
   add(outNames, outDesc, "Damage", "Cumulative damage, 0 to 1")
   add(outNames, outDesc, "FaultCode", "0 none / 1 brownout / 2 overvoltage / 3 no mains / 4 thermal / 5 overload / 6 short / 7 DC / 8 burnt")
-  -- Signal ports are the n Ch<N>In / Ch<N>Out pairs at the head of each list.
-  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, n, n)
+  -- Signal ports are the n Ch<N>In and the n Ch<N>Bus pairs, and they are the
+  -- only ports before the mains block below.
+  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, 2 * n, n)
+end
+
+-- The bus this channel is fed, derived from the identifier the mixer publishes
+-- beside the level. This is what the channel IS: not a panel setting that can
+-- disagree with the wiring. Returns nil when nothing identifies it yet.
+function ENT:ChannelBusId(ch)
+  local id = (self.BusIds or {})[ch]
+  if id == nil then return nil end
+  return NTx.BusClamp(id)
+end
+
+function ENT:ChannelBus(ch)
+  local id = self:ChannelBusId(ch)
+  return id or NTx.BUS_MIDL
+end
+
+-- Kept for the code that asks "does this channel feed SUB cabinets". Now
+-- derived rather than read from a hand-set bitfield.
+function ENT:ChannelIsSub(ch)
+  return NTx.BusIsSub(self:ChannelBus(ch))
 end
 
 function ENT:OnChannelsChanged()
