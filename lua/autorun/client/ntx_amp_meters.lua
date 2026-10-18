@@ -580,17 +580,27 @@ local function drawPac3Lamps(ent, rec, lamps)
   local diam = pac3LampDiameter(ent, lamps)
   model:SetModelScale(diam / LED_NATIVE, 0)
 
-  -- Nudge each dome out along the model's +X, which is the front face on these
-  -- chassis. Without it a lamp authored flush with the panel surface is drawn
-  -- half-buried inside the solid mesh and simply is not visible.
-  local lift = diam * 0.55
+  -- Depth is NOT taken from PAC3. Measured against a real chassis
+  -- (reciever01b.mdl, bounds x -7.375..7.353), PAC3 places these lamps at
+  -- x=6.351 - about a unit INSIDE the front face - so using its depth drew
+  -- every dome buried in the solid mesh and none of them were visible.
+  --
+  -- Instead the lamps are pinned to the model's own front face and PAC3's x is
+  -- kept only as a RELATIVE depth, measured from the frontmost lamp. A flat
+  -- layout therefore lands flush on the face whatever PAC3 thought the depth
+  -- was, and a lamp deliberately recessed in PAC3 still ends up behind the
+  -- ones in front of it.
+  local mn, mx = ent:GetModelBounds()
+  local faceX, front = mx and mn and (mx.x or 0), (lamps.maxX or 0)
+  -- Push the dome clear of the face rather than leaving it half-sunk in it.
+  local lift = diam * 0.6
 
   for _, lamp in ipairs(lamps) do
     local alpha, col = NTx.Pac3LampState(ent, lamp, rec)
     -- Unlit lamps keep the lens tint PAC3 gave them; lit lamps take the
     -- semantic colour so the world matches the Derma panel.
     local base = col or lamp.lens or OFF
-    local p = lamp.pos + Vector(lift, 0, 0)
+    local p = Vector(faceX + (lamp.pos.x - front) + lift, lamp.pos.y, lamp.pos.z)
     model:SetPos(ent:LocalToWorld(p))
     model:SetAngles(ent:GetAngles() + lamp.ang)
     render.MaterialOverride(ledMaterial(base, alpha, lamp.lens))

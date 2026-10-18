@@ -116,11 +116,16 @@ local function decode(row)
   }
 end
 
--- One-off sanity check per chassis. If a lamp sits outside the model's own
--- bounds the two tools disagree about where the model origin is - PAC3 and GMod
--- read the same .mdl but do not always place its pivot identically - and every
--- lamp will render in the wrong place. Saying so once is far cheaper than
--- guessing at lamp positions from screenshots.
+-- One-off sanity check per chassis.
+--
+-- Two failure modes, and only one of them is a bounds violation:
+--   * a lamp outside the model's bounds means PAC3 and GMod disagree about
+--     where the model origin is
+--   * a lamp INSIDE the bounds can still be buried in the solid mesh, which is
+--     exactly what happened with reciever01b.mdl: PAC3 authored x=6.351 while
+--     the face sits at 7.353, so every lamp was ~0.85 units under the surface
+--     and invisible. Bounds alone cannot catch that, so the depth is checked
+--     against the front face separately.
 local originWarned = {}
 local function warnIfOutsideBounds(ent, lamps)
   local key = ent:GetModel()
@@ -143,6 +148,17 @@ local function warnIfOutsideBounds(ent, lamps)
       return
     end
   end
+  -- Inside the bounds, but sunk below the face.
+  local front = lamps.maxX
+  if front and front < mx.x - 0.5 then
+    originWarned[key] = true
+    print(string.format(
+      "[NTx] PAC3 lamps on %s sit at x=%.3f but the front face is x=%.3f, "
+      .. "so they were authored %.2f units inside the chassis. They are being "
+      .. "pinned to the face instead; re-author them in PAC3 against the model "
+      .. "surface if the depth matters.",
+      key, front, mx.x, mx.x - front))
+  end
 end
 
 function NTx.Pac3Lamps(ent)
@@ -164,10 +180,18 @@ function NTx.Pac3Lamps(ent)
   local lamps
   if rows and #rows > 0 then
     lamps = {}
+    -- Frontmost authored depth, used by the renderer to turn PAC3's absolute x
+    -- into a depth relative to whatever it measures against. See
+    -- drawPac3Lamps - PAC3's absolute x does not line up with GMod's face.
+    local maxX
     for i = 1, #rows do
       local ok, lamp = pcall(decode, rows[i])
-      if ok and lamp then lamps[#lamps + 1] = lamp end
+      if ok and lamp then
+        lamps[#lamps + 1] = lamp
+        if not maxX or lamp.pos.x > maxX then maxX = lamp.pos.x end
+      end
     end
+    lamps.maxX = maxX or 0
   end
   cache[key] = lamps or false
   return lamps
