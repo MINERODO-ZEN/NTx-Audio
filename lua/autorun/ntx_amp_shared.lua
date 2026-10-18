@@ -628,6 +628,7 @@ end
 -- handlers on the server, so this is driven by a player and sends the console
 -- command to that player's client. Returns true when it consumed the click.
 function NTx.OpenEntityGui(ply, ent)
+  print("[NTX DBG] OpenEntityGui " .. (IsValid(ent) and ent:GetClass() .. ":" .. ent:EntIndex() or "nil"))
   local cmd = NTx.GuiVerb(ent)
   if cmd == "" or not IsValid(ply) then return false end
   ply:ConCommand(cmd)

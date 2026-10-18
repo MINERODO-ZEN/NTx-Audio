@@ -40,7 +40,9 @@ function TOOL:LeftClick(tr)
   if CLIENT then return true end
   local ply = self:GetOwner()
   local ent = tr.Entity
-  if NTx.ToolShift(ply) and NTx.OpenEntityGui(ply, ent) then return true end
+  local _shift = NTx.ToolShift(ply)
+  print("[NTX DBG] LeftClick " .. (IsValid(ent) and ent:GetClass() .. ":" .. ent:EntIndex() or "nil") .. " shift=" .. tostring(_shift))
+  if _shift and NTx.OpenEntityGui(ply, ent) then return true end
   return NTx.ToolLinkClick(ply, ent)
 end
 
