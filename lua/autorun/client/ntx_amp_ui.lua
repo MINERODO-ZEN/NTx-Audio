@@ -32,6 +32,16 @@ local function comboPick(combo, data)
   if idx then combo:ChooseOptionID(idx) end
 end
 
+-- GetSelectedID returns a 1-based INDEX, not the value the choice was added
+-- with. Those two are only the same by accident when the data happens to run
+-- 1,2,3 - so reading a combo for its value has to go through GetOptionData.
+-- Sending the index as the value inverts MID/SUB and shifts every mode by one.
+local function comboGet(combo)
+  local id = combo:GetSelectedID()
+  if not id then return nil end
+  return combo:GetOptionData(id)
+end
+
 local function row(parent, h)
   local r = vgui.Create("DPanel", parent)
   r:Dock(TOP)
@@ -440,15 +450,18 @@ function NTx.OpenAmpLinkPanel(amp, mixer)
   go.DoClick = function()
     local mask = 0
     for ch, bus in pairs(combos) do
-      if bus:GetSelectedID() == 1 then mask = bit.bor(mask, bit.lshift(1, ch - 1)) end
+      -- comboGet, not GetSelectedID: SUB is choice index 2 but value 1, so
+      -- comparing the index to 1 sent every channel as the opposite bus.
+      if tonumber(comboGet(bus)) == 1 then mask = bit.bor(mask, bit.lshift(1, ch - 1)) end
     end
     net.Start("NTx.AmpEdit")
     net.WriteEntity(amp)
     net.WriteString("link")
     net.WriteEntity(IsValid(mixer) and mixer or NULL)
     net.WriteUInt(mask, 8)
-    net.WriteUInt(mode:GetSelectedID() or 0, 2)
-    net.WriteUInt(hiz:GetSelectedID() or 0, 8)
+    -- Same index/value mix-up: the server reads these as raw values.
+    net.WriteUInt(math.Clamp(tonumber(comboGet(mode)) or 0, 0, 3), 2)
+    net.WriteUInt(math.Clamp(tonumber(comboGet(hiz)) or 0, 0, 240), 8)
     net.SendToServer()
     frame:Close()
   end
