@@ -31,7 +31,7 @@ function ENT:Think()
     * ((NTx.MeasuredRms and NTx.MeasuredRms(self)) or 1)
   local n = (NTx and NTx.BUS_COUNT) or 4
   local changed = false
-  self.WireBuses = self.WireBuses or {}
+  if not istable(self.WireBuses) then self.WireBuses = {} end
   for i = 1, n do
     if self.WireBuses[i] ~= lvl then
       self.WireBuses[i] = lvl

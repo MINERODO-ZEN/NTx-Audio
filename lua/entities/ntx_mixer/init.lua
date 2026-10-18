@@ -19,7 +19,10 @@ function ENT:Initialize()
   if self:GetSubFader() == 0 then self:SetSubFader(1) end
   self.Channels = {}
   self.WireLevels = {}
-  self.WireOut = 0
+  -- Per-bus output cache, indexed by bus id, with the published identifiers
+  -- alongside under "id<n>". This has to be a table: it used to be a single
+  -- number back when the mixer published one summed level.
+  self.WireOut = {}
   self:CreateWirePorts()
   if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
   NTx.Mixers[self] = true
@@ -92,8 +95,9 @@ function ENT:Think()
   self:NextThink(CurTime() + 0.1)
   local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR" }
   local ids = (NTx and NTx.BUS_ID_PORTS) or { "MidLBus", "MidRBus", "SubLBus", "SubRBus" }
-  local names = (NTx and NTx.BUS_NAMES) or { "MidL", "MidR", "SubL", "SubR" }
-  self.WireOut = self.WireOut or {}
+  -- istable, not `or {}`: a mixer saved before this change carries a number
+  -- here, and indexing that would error on every tick.
+  if not istable(self.WireOut) then self.WireOut = {} end
   for b = 0, 3 do
     local out = self:ComputeBusOut(b)
     if out ~= self.WireOut[b] then
