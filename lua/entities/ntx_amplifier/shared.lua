@@ -175,14 +175,12 @@ function ENT:CreateWirePorts()
   -- as signal too, which then refuses a wire from an external power-line
   -- simulator (its voltage output is NORMAL, not NTXSIG).
   --
-  -- Signal in/out is the pair the topology walk follows: a mixer's bus level
-  -- lands on Ch<N>In and Ch<N>Bus feeds the cabinets, and Ch<N>Out drives
-  -- whatever is on that channel's outputs. The identifier beside the level is
-  -- what tells the amplifier what bus it is being fed.
+  -- Signal in/out is what the topology walk follows. Ch<N>In takes the mixer's
+  -- PAIR - level and bus identifier in one ARRAY - so a signal and the bus it
+  -- belongs to travel together and cannot be wired to the wrong channel.
   for i = 1, n do
-    add(inNames, inDesc, "Ch" .. i .. "In", "Signal level into channel " .. i .. ", 0 to 1")
-    add(inNames, inDesc, "Ch" .. i .. "Bus", "Bus identifier for channel " .. i
-      .. " (0 MidL / 1 MidR / 2 SubL / 3 SubR)")
+    add(inNames, inDesc, "Ch" .. i .. "In",
+      "Level and bus identifier into channel " .. i .. " [level, id]")
   end
   -- Numeric telemetry, NORMAL type, so external wiring can reach them.
   add(inNames, inDesc, "MainsV", "Mains voltage, volts RMS")
@@ -213,9 +211,11 @@ function ENT:CreateWirePorts()
   add(outNames, outDesc, "GainRedDb", "Thermal gain reduction, dB")
   add(outNames, outDesc, "Damage", "Cumulative damage, 0 to 1")
   add(outNames, outDesc, "FaultCode", "0 none / 1 brownout / 2 overvoltage / 3 no mains / 4 thermal / 5 overload / 6 short / 7 DC / 8 burnt")
-  -- Signal ports are the n Ch<N>In and the n Ch<N>Bus pairs, and they are the
-  -- only ports before the mains block below.
-  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, 2 * n, n)
+  -- The n Ch<N>In ports are the signal inputs; the mains block below is NORMAL
+  -- telemetry. Only the channel inputs take a pair.
+  local inOv = {}
+  for i = 1, n do inOv[i] = "ARRAY" end
+  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, n, n, nil, inOv)
 end
 
 -- The bus this channel is fed, derived from the identifier the mixer publishes

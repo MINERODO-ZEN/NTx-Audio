@@ -94,21 +94,20 @@ end
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
   local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR" }
-  local ids = (NTx and NTx.BUS_ID_PORTS) or { "MidLBus", "MidRBus", "SubLBus", "SubRBus" }
   -- istable, not `or {}`: a mixer saved before this change carries a number
   -- here, and indexing that would error on every tick.
   if not istable(self.WireOut) then self.WireOut = {} end
   for b = 0, 3 do
     local out = self:ComputeBusOut(b)
-    if out ~= self.WireOut[b] then
-      self.WireOut[b] = out
-      NTx.WireOut(self, levels[b + 1], out)
-    end
-    -- The identifier is constant, but it has to be published on a wire so the
-    -- amplifier learns its channel type by being wired rather than by a panel.
-    if self.WireOut["id" .. b] ~= b then
-      self.WireOut["id" .. b] = b
-      NTx.WireOut(self, ids[b + 1], b)
+    -- The level and the bus identifier travel together as a pair, so a signal
+    -- and the bus it belongs to can never be wired to the wrong channel. A
+    -- fresh table each time: Wiremod holds ARRAY values by reference, and
+    -- mutating the one it already stores would not re-trigger the fan-out.
+    local pair = { out, b }
+    local key = tostring(b)
+    if self.WireOut[key] ~= out then
+      self.WireOut[key] = out
+      NTx.WireOut(self, levels[b + 1], pair)
     end
   end
 end

@@ -628,10 +628,15 @@ end
 -- sigNames/nSig marks the leading ports as signal-level so they get the custom
 -- type; everything else stays NORMAL telemetry.
 --
--- outOverrides maps an output INDEX to an explicit type name, for the ports that
--- are neither signal nor plain number - the speaker's ARRAY link output, for
--- instance. Overrides win over the signal heuristic.
-function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts, outOverrides)
+-- An overrides table maps a port INDEX to an explicit type name, for ports that
+-- are neither signal nor plain number. Overrides win over the signal heuristic.
+--
+-- Inputs and outputs have SEPARATE override tables because they are genuinely
+-- different ports: the mixer takes arrays on its 16 inputs while publishing
+-- pairs of numbers on its 4 outputs. One table cannot describe both, and
+-- passing an input-shaped table here mistyped the mixer's outputs as ARRAY
+-- while leaving its inputs NTXSIG - which Wiremod then refused to link.
+function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts, outOverrides, inOverrides)
   if not Wire_CreateInputs or not Wire_CreateOutputs then return false end
   inNames, inDesc = inNames or {}, inDesc or {}
   outNames, outDesc = outNames or {}, outDesc or {}
@@ -653,7 +658,7 @@ function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts,
   if #inNames > 0 then
     local fn = (ent.Inputs and WireLib.AdjustSpecialInputs) and WireLib.AdjustSpecialInputs
       or WireLib.CreateSpecialInputs
-    wireAdjust(fn, ent, inNames, typeList(inNames, sigIns), inDesc)
+    wireAdjust(fn, ent, inNames, typeList(inNames, sigIns, inOverrides), inDesc)
   end
   if #outNames > 0 then
     local fn = (ent.Outputs and WireLib.AdjustSpecialOutputs) and WireLib.AdjustSpecialOutputs

@@ -80,14 +80,17 @@ function ENT:TriggerInput(name, value)
   else
     local ch = NTx.WireChannelOf and NTx.WireChannelOf(name) or nil
     if ch then
-      local v2 = tonumber(value)
-      if name:match("Bus$") then
-        -- The bus identifier. This is what makes the channel's type a
-        -- consequence of the wiring rather than of a panel setting.
-        self:SetChannelBus(ch, v2)
-      else
+      -- The mixer sends a PAIR: level and bus identifier, in one array.
+      -- Splitting it here is what makes the channel's type a consequence of
+      -- the wiring rather than of a panel setting.
+      if istable(value) then
+        self:SetChannelBus(ch, value[2])
         self.WireSignal = self.WireSignal or {}
-        self.WireSignal[ch] = math.Clamp(v2 or 0, 0, 2)
+        self.WireSignal[ch] = math.Clamp(tonumber(value[1]) or 0, 0, 2)
+      else
+        -- A bare number still works, for a source that only carries a level.
+        self.WireSignal = self.WireSignal or {}
+        self.WireSignal[ch] = math.Clamp(v, 0, 2)
       end
     end
   end
