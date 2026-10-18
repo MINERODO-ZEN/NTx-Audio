@@ -429,8 +429,45 @@ local LED_NATIVE = 1.37      -- models/led.mdl bounding size, in model units
 local LED_PX = 12            -- target lamp diameter, in virtual panel pixels
 local LED_LIFT = 0.5         -- how far the domes sit off the chassis face
 
-local ledModels = {}         -- amp entity -> its cached ClientsideModel
+local ledModels = {}         -- amp entity -> array of ClientsideModel, one PER LAMP
 local ledMats = {}           -- quantised colour -> material
+
+-- One model entity per lamp, not one per amplifier. A ClientsideModel holds a
+-- single world transform, so drawing the same entity several times in one frame
+-- makes every draw reuse the last transform written: with four lamps that
+-- collapses to one visible dome in the wrong place, and its colour comes from
+-- whichever lamp was drawn last.
+local function lampModels(ent, count, modelScale)
+  local pool = ledModels[ent]
+  if not istable(pool) then
+    pool = {}
+    ledModels[ent] = pool
+  end
+  for i = 1, count do
+    -- Cached entity references go stale when the game recycles them.
+    if not IsValid(pool[i]) then
+      local m = ClientsideModel("models/led.mdl", RENDERGROUP_OTHER)
+      if not IsValid(m) then return nil end
+      m:SetNoDraw(true)
+      pool[i] = m
+    end
+  end
+  if modelScale then
+    for i = 1, count do
+      pool[i]:SetModelScale(modelScale, 0)
+    end
+  end
+  return pool
+end
+
+NTx.ReleaseAmpLedModels = function(ent)
+  local pool = ledModels[ent]
+  if not istable(pool) then return end
+  for _, m in ipairs(pool) do
+    if IsValid(m) then m:Remove() end
+  end
+  ledModels[ent] = nil
+end
 
 -- col is the lit colour and may be nil for a dark lamp, in which case `lens`
 -- (the tint PAC3 recorded) supplies the plastic colour. A dark lamp is never
@@ -544,22 +581,16 @@ local function pac3LampsFor(ent)
 end
 
 local function drawPac3Lamps(ent, rec, lamps)
-  local model = ledModels[ent]
-  if not IsValid(model) then
-    model = ClientsideModel("models/led.mdl", RENDERGROUP_OTHER)
-    if not IsValid(model) then return end
-    model:SetNoDraw(true)
-    ledModels[ent] = model
-  end
-
   -- PAC3's values are used exactly as stored, because PAC3 already renders them
   -- correctly and anything adjusted here is a guess about what the author
   -- meant. Native model scale is what PAC3 itself uses when a layout records no
   -- Size or Scale, so an unannotated lamp comes out the same size as it does in
   -- the editor.
-  model:SetModelScale(1, 0)
+  local pool = lampModels(ent, #lamps, 1)
+  if not pool then return end
 
-  for _, lamp in ipairs(lamps) do
+  for i, lamp in ipairs(lamps) do
+    local model = pool[i]
     local alpha, col = NTx.Pac3LampState(ent, lamp, rec)
     -- Unlit lamps keep the lens tint PAC3 gave them; lit lamps take the
     -- semantic colour so the world matches the Derma panel.
@@ -595,16 +626,12 @@ function NTx.DrawAmpWorldLeds(ent, rec)
     - right * (NTx.AMP_PANEL_W * scale * 0.5)
     + up * (NTx.AMP_PANEL_H * scale * 0.5)
 
-  local model = ledModels[ent]
-  if not IsValid(model) then
-    model = ClientsideModel("models/led.mdl", RENDERGROUP_OTHER)
-    if not IsValid(model) then return end
-    model:SetNoDraw(true)
-    model:SetModelScale((LED_PX * scale) / LED_NATIVE, 0)
-    ledModels[ent] = model
-  end
+  local pts = ledPoints(ent, rec)
+  local pool = lampModels(ent, #pts, (LED_PX * scale) / LED_NATIVE)
+  if not pool then return end
 
-  for _, p in ipairs(ledPoints(ent, rec)) do
+  for i, p in ipairs(pts) do
+    local model = pool[i]
     local pos = topLeft + right * (p.x * scale) - up * (p.y * scale)
       + fwd * LED_LIFT
     model:SetPos(pos)
@@ -633,11 +660,7 @@ end)
 
 -- Lamp models and LED memory follow their amplifier out of the world.
 hook.Add("EntityRemoved", "NTx.AmpLedCleanup", function(ent)
-  local model = ledModels[ent]
-  if model ~= nil then
-    ledModels[ent] = nil
-    if IsValid(model) then model:Remove() end
-  end
+  if NTx.ReleaseAmpLedModels then NTx.ReleaseAmpLedModels(ent) end
   local base = ent:EntIndex() * 16
   for key in pairs(NTx.AmpLeds) do
     if key > base and key <= base + 15 then NTx.AmpLeds[key] = nil end
