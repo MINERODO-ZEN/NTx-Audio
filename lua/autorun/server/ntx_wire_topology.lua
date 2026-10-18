@@ -48,10 +48,16 @@ function NTx.WireDownstream(ent, port)
   return out
 end
 
--- "Ch3In" -> 3. Returns nil for anything that is not a signal input.
+-- "Ch3In" or "Ch3Out" -> 3. Returns nil for anything else.
+--
+-- Both directions matter. The amplifier's own TriggerInput is handed the input
+-- port name, but directAmpChannel reads the SOURCE port of whatever is wired to
+-- a cabinet, which is an output name. Matching only "In" meant a cabinet wired
+-- to Ch2Out resolved to no channel at all and fell through to the first
+-- matching bus - which is why everything ended up on channel 1.
 function NTx.WireChannelOf(port)
   if type(port) ~= "string" then return nil end
-  local n = port:match("^Ch(%d+)In$")
+  local n = port:match("^Ch(%d+)In$") or port:match("^Ch(%d+)Out$")
   if not n then return nil end
   return math.Clamp(tonumber(n), 1, 8)
 end
@@ -87,11 +93,18 @@ local function resolveChain(ent)
 end
 
 -- Which amplifier output feeds this cabinet directly (one hop, no series walk).
+-- Returns (channel, amplifier), or just nil when this cabinet is not wired
+-- straight to an amplifier - the caller then falls through to the chain walk.
+--
+-- Deliberately NOT `or 0`: zero is truthy in Lua, so returning it made every
+-- caller treat "channel unknown" as "channel 0 is a valid answer".
 local function directAmpChannel(spk)
   local src, sport = NTx.WireUpstream(spk, "In")
   if not IsValid(src) then return nil end
   if src:GetClass() ~= "ntx_amplifier" then return nil end
-  return NTx.WireChannelOf(sport) or 0, src
+  local ch = NTx.WireChannelOf(sport)
+  if not ch then return nil end
+  return ch, src
 end
 
 -- --------------------------------------------------------- legacy migration
