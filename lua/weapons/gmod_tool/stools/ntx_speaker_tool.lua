@@ -31,6 +31,16 @@ TOOL.ClientConVar["spkactive"] = "0"
 -- The panel's save row writes the name here; it is a workspace, not a setting.
 TOOL.ClientConVar["spksavename"] = ""
 
+-- The tool system creates one client convar per ClientConVar entry, named
+-- "<tool class>_<key>" (sandbox/entities/weapons/gmod_tool/stool.lua). The
+-- panel controls have to bind to that exact name: DForm rows run
+-- RunConsoleCommand on whatever they were given, so a bare key is just an
+-- "Unknown command" every time a slider moves. The server side still asks for
+-- the bare key, because GetClientInfo("spkprofile") resolves it from the table.
+local function cv(key)
+  return "ntx_speaker_tool_" .. key
+end
+
 local function altHeld(ply)
   return ply:KeyDown(KEY_LALT) or ply:KeyDown(KEY_RALT)
 end
@@ -104,34 +114,33 @@ function TOOL:Reload(tr)
   return true
 end
 
--- Convar-bound dropdown.
---
--- AddControl("ComboBox", {MenuButton = 1}) does NOT build a value dropdown: it
--- hands the case to a preset picker that never shows the current value. The
--- DForm row is the real control, but it does not write the convar when an
--- option is picked - and the convar is what RightClick reads on the server, so
--- the selection is written here instead of trusted.
+-- Convar-bound dropdown. The DForm row is the real control (AddControl's
+-- ComboBox hands the case to a preset picker instead), but it binds to
+-- "ntsl_<tool>_<key>" - the command name AddControl asked for, not a convar we
+-- named - and it does not write that convar when an option is picked. Right-
+-- click reads the convar on the server, so the selection is written here.
 local function dropdown(panel, label, convar, choices)
   local right = panel:ComboBox(label, convar)
   right:SetTall(26)
   for _, ch in ipairs(choices) do
     right:AddChoice(ch[1], ch[2])
   end
-  right.OnSelect = function(_, _, data)
-    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  -- ChooseOption passes (index, text, data): the third argument is the choice's
+  -- own value. RunConsoleCommand is unusable here, it splits on spaces.
+  right.OnSelect = function(_, _, _, data)
+    local cvar = GetConVar(convar)
+    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
-  local current = GetConVarString(convar)
-  for i, ch in ipairs(choices) do
-    if tostring(ch[2]) == current then right:ChooseOptionID(i) break end
-  end
+  local cvar = GetConVar(convar)
+  local current = cvar and cvar:GetString() or ""
+  right:ChooseOptionID(current)
   right:SetValue(current)
   return right
 end
 
--- The profile picker is built by hand for the same reason, plus one more: the
--- profile list is dynamic (saved profiles arrive over the network at any time),
--- so a preset picker has nothing to show. Choosing a profile writes
--- ntx_audio_spkprofile, which is what RightClick applies.
+-- The profile picker is built by hand because the list is dynamic: saved
+-- profiles arrive over the network at any time, so a preset picker has nothing
+-- to show. Choosing a profile writes the convar RightClick applies.
 local function profilePicker(panel, list, convar, mark)
   local combo = vgui.Create("DComboBox", panel)
   combo:Dock(TOP)
@@ -142,13 +151,15 @@ local function profilePicker(panel, list, convar, mark)
     combo:AddChoice(p.name .. (p.saved and mark or ""), p.id)
     index[p.id] = i
   end
-  combo.OnSelect = function(_, _, data)
-    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  -- Preselect BEFORE OnSelect is attached: ChooseOptionID fires OnSelect with
+  -- the option's *text*, which here is a profile name, not an id.
+  if list[1] then
+    local cvar = GetConVar(convar)
+    combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
   end
-  local chosen = index[GetConVarString(convar)] or (list[1] and 1)
-  if chosen then
-    combo:ChooseOptionID(chosen)
-    combo:SetValue(combo:GetOptionText(chosen))
+  combo.OnSelect = function(_, _, _, data)
+    local cvar = GetConVar(convar)
+    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
   return combo
 end
@@ -165,7 +176,7 @@ function TOOL.BuildCPanel(panel)
   -- stores the aimed cabinet under the typed name. Both act on the crosshair,
   -- so no panel has to be open for a profile to move.
   panel:AddControl("Label", { Text = "CABINET PROFILE" })
-  local spkCombo = profilePicker(panel, NTx.AllSpeakerProfiles(), "ntx_audio_spkprofile", " *")
+  local spkCombo = profilePicker(panel, NTx.AllSpeakerProfiles(), cv("spkprofile"), " *")
 
   local loadRow = vgui.Create("DPanel", panel)
   loadRow:Dock(TOP)
@@ -188,7 +199,7 @@ function TOOL.BuildCPanel(panel)
     -- Whatever the combo currently points at, with the convar as the fallback:
     -- the button has to work even if the combo never got a selection.
     net.WriteString(tostring(spkCombo:GetOptionData(spkCombo:GetSelectedID())
-      or GetConVarString("ntx_audio_spkprofile")))
+      or GetConVarString(cv("spkprofile"))))
     net.SendToServer()
   end
   local saveBtn = vgui.Create("DButton", loadRow)
@@ -197,7 +208,7 @@ function TOOL.BuildCPanel(panel)
   saveBtn:Dock(RIGHT)
   saveBtn.DoClick = function()
     local spk = aimedSpeaker()
-    local name = NTx.SpkSanitiseName(GetConVarString("ntx_audio_spksavename"))
+    local name = NTx.SpkSanitiseName(GetConVarString(cv("spksavename")))
     if not IsValid(spk) then
       LocalPlayer():ChatPrint("[NTx] Aim at a cabinet first.")
       return
@@ -212,60 +223,60 @@ function TOOL.BuildCPanel(panel)
     net.WriteString(name)
     net.SendToServer()
   end
-  panel:AddControl("TextBox", { Label = "Save as", Command = "ntx_audio_spksavename" })
+  panel:AddControl("TextBox", { Label = "Save as", Command = cv("spksavename") })
   panel:AddControl("Label", {
     Text = "* = saved profile, shared with the server. Loading a profile stamps its impedance, power ratings and tap onto the cabinet; the sliders below then override it.",
   })
 
   panel:AddControl("Label", { Text = "POWER / OHMS" })
   panel:AddControl("Slider", {
-    Label = "Impedance (ohm)", Command = "ntx_audio_spkimp", Min = 0.5, Max = 1000,
+    Label = "Impedance (ohm)", Command = cv("spkimp"), Min = 0.5, Max = 1000,
     Default = 8, Decimals = 1,
   })
   panel:AddControl("Slider", {
-    Label = "RMS power (W)", Command = "ntx_audio_spkrmsw", Min = 5, Max = 5000,
+    Label = "RMS power (W)", Command = cv("spkrmsw"), Min = 5, Max = 5000,
     Default = 500, Decimals = 0,
   })
   panel:AddControl("Slider", {
-    Label = "Peak power (W)", Command = "ntx_audio_spkpeakw", Min = 10, Max = 10000,
+    Label = "Peak power (W)", Command = cv("spkpeakw"), Min = 10, Max = 10000,
     Default = 1000, Decimals = 0,
   })
   panel:AddControl("Slider", {
-    Label = "Min amp watts", Command = "ntx_audio_spkminampw", Min = 0, Max = 3000,
+    Label = "Min amp watts", Command = cv("spkminampw"), Min = 0, Max = 3000,
     Default = 350, Decimals = 0,
   })
   panel:AddControl("Slider", {
-    Label = "Series group (0-8)", Command = "ntx_audio_spkseries", Min = 0, Max = 8,
+    Label = "Series group (0-8)", Command = cv("spkseries"), Min = 0, Max = 8,
     Default = 0, Decimals = 0,
   })
   panel:AddControl("Slider", {
-    Label = "Amp channel (0 = auto)", Command = "ntx_audio_spkampch", Min = 0, Max = 8,
+    Label = "Amp channel (0 = auto)", Command = cv("spkampch"), Min = 0, Max = 8,
     Default = 0, Decimals = 0,
   })
-  dropdown(panel, "Hi-Z tap", "ntx_audio_spktapv", {
+  dropdown(panel, "Hi-Z tap", cv("spktapv"), {
     { "low-Z", "0" }, { "70 V", "70" }, { "100 V", "100" },
   })
-  dropdown(panel, "Self-powered", "ntx_audio_spkactive", {
+  dropdown(panel, "Self-powered", cv("spkactive"), {
     { "Passive (amp driven)", "0" }, { "ACTIVE (no simulation)", "1" },
   })
 
   panel:AddControl("Label", { Text = "CABINET PLACEMENT" })
-  dropdown(panel, "Speaker type", "ntx_audio_stype", {
+  dropdown(panel, "Speaker type", cv("stype"), {
     { "MID", "MID" }, { "SUB", "SUB" },
   })
-  panel:AddControl("TextBox", { Label = "Array ID", Command = "ntx_audio_arrayid" })
-  dropdown(panel, "Self-cardioid", "ntx_audio_selfcard", {
+  panel:AddControl("TextBox", { Label = "Array ID", Command = cv("arrayid") })
+  dropdown(panel, "Self-cardioid", cv("selfcard"), {
     { "Off", "0" }, { "On", "1" },
   })
-  dropdown(panel, "Rear polarity", "ntx_audio_reversed", {
+  dropdown(panel, "Rear polarity", cv("reversed"), {
     { "Normal", "0" }, { "Reversed", "1" },
   })
   panel:AddControl("Slider", {
-    Label = "MID H-FOV (deg)", Command = "ntx_audio_hifov", Min = 5, Max = 360,
+    Label = "MID H-FOV (deg)", Command = cv("hifov"), Min = 5, Max = 360,
     Default = 152, Decimals = 0,
   })
   panel:AddControl("Slider", {
-    Label = "MID V-FOV (deg)", Command = "ntx_audio_vifov", Min = 5, Max = 360,
+    Label = "MID V-FOV (deg)", Command = cv("vifov"), Min = 5, Max = 360,
     Default = 57, Decimals = 0,
   })
 

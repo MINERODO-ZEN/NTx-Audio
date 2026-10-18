@@ -26,6 +26,16 @@ TOOL.ClientConVar["ampmeters"] = "2"
 TOOL.ClientConVar["ampcrest"] = "12"
 TOOL.ClientConVar["ampthbias"] = "1"
 
+-- The tool system creates one client convar per ClientConVar entry, named
+-- "<tool class>_<key>" (sandbox/entities/weapons/gmod_tool/stool.lua). The
+-- panel controls have to bind to that exact name: DForm rows run
+-- RunConsoleCommand on whatever they were given, so a bare key is just an
+-- "Unknown command" every time a slider moves. The server side still asks for
+-- the bare key, because GetClientInfo("ampchans") resolves it from the table.
+local function cv(key)
+  return "ntx_amp_tool_" .. key
+end
+
 -- Left-click: open the aimed amplifier's panel.
 function TOOL:LeftClick(tr)
   if CLIENT then return true end
@@ -83,46 +93,56 @@ function TOOL:Reload(tr)
   return true
 end
 
--- Convar-bound dropdown. DForm's ComboBox builds the row correctly but does not
--- write the convar when an option is picked, and the convar is what RightClick
--- reads on the server - so the selection is written here instead of trusted.
+-- Convar-bound dropdown.
+--
+-- AddControl("ComboBox", {MenuButton = 1}) does NOT build a value dropdown: it
+-- hands that case to a preset picker, which never shows the current value and
+-- writes a preset file from its + button. The DForm row is the real control -
+-- but it binds to "ntsl_<tool>_<key>", the command name AddControl asked for,
+-- and its ComboBox does not write that convar when an option is picked. Right-
+-- click reads the convar on the server, so the selection is written here.
 local function dropdown(panel, label, convar, choices)
   local right = panel:ComboBox(label, convar)
   right:SetTall(26)
   for _, ch in ipairs(choices) do
     right:AddChoice(ch[1], ch[2])
   end
-  right.OnSelect = function(_, _, data)
-    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  -- ChooseOption passes (index, text, data): the third argument is the choice's
+  -- own value. RunConsoleCommand is unusable here, it splits on spaces.
+  right.OnSelect = function(_, _, _, data)
+    local cvar = GetConVar(convar)
+    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
-  local current = GetConVarString(convar)
-  for i, ch in ipairs(choices) do
-    if tostring(ch[2]) == current then right:ChooseOptionID(i) break end
-  end
+  local cvar = GetConVar(convar)
+  local current = cvar and cvar:GetString() or ""
+  right:ChooseOptionID(current)
   right:SetValue(current)
   return right
 end
 
 -- The model list is dynamic (it grows with every profile NTx knows), so it is
--- built by hand rather than through the DForm row. Choosing a model writes
--- ntx_audio_ampprofile, which RightClick applies.
+-- built by hand rather than through the DForm row. Choosing a model writes the
+-- convar RightClick applies.
 local function modelPicker(panel, convar)
   local combo = vgui.Create("DComboBox", panel)
   combo:Dock(TOP)
   combo:DockMargin(4, 0, 4, 0)
   combo:SetTall(26)
   local index = {}
-  for i, id in ipairs(NTx.AmpProfileIds()) do
+  local ids = NTx.AmpProfileIds()
+  for i, id in ipairs(ids) do
     combo:AddChoice(NTx.AmpProfile(id).name, id)
     index[id] = i
   end
-  combo.OnSelect = function(_, _, data)
-    RunConsoleCommand(convar .. " " .. tostring(data or ""))
+  -- Preselect BEFORE OnSelect is attached: ChooseOptionID fires OnSelect with
+  -- the option's *text*, which is a model name, not the id RightClick needs.
+  if ids[1] then
+    local cvar = GetConVar(convar)
+    combo:ChooseOptionID(index[cvar and cvar:GetString() or ""] or 1)
   end
-  local chosen = index[GetConVarString(convar)] or (index[NTx.AmpProfileIds()[1]] or 1)
-  if chosen then
-    combo:ChooseOptionID(chosen)
-    combo:SetValue(combo:GetOptionText(chosen))
+  combo.OnSelect = function(_, _, _, data)
+    local cvar = GetConVar(convar)
+    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
   return combo
 end
@@ -135,50 +155,50 @@ function TOOL.BuildCPanel(panel)
   })
 
   panel:AddControl("Label", { Text = "AMPLIFIER MODEL" })
-  modelPicker(panel, "ntx_audio_ampprofile")
+  modelPicker(panel, cv("ampprofile"))
   panel:AddControl("Label", {
     Text = "Choosing a model stamps its published power, sensitivity, PFC, thermal limits and meter layout onto the amplifier.",
   })
 
   panel:AddControl("Slider", {
-    Label = "Channels", Command = "ntx_audio_ampchans", Min = 1, Max = 8,
+    Label = "Channels", Command = cv("ampchans"), Min = 1, Max = 8,
     Default = 2, Decimals = 0,
   })
   panel:AddControl("Slider", {
-    Label = "Rated watts / channel", Command = "ntx_audio_ampratedw", Min = 10, Max = 2000,
+    Label = "Rated watts / channel", Command = cv("ampratedw"), Min = 10, Max = 2000,
     Default = 500, Decimals = 0,
   })
   panel:AddControl("Slider", {
-    Label = "Min load (ohm)", Command = "ntx_audio_ampminz", Min = 0.5, Max = 32,
+    Label = "Min load (ohm)", Command = cv("ampminz"), Min = 0.5, Max = 32,
     Default = 2, Decimals = 1,
   })
   panel:AddControl("Slider", {
-    Label = "Sensitivity (V)", Command = "ntx_audio_ampsens", Min = 0.1, Max = 5,
+    Label = "Sensitivity (V)", Command = cv("ampsens"), Min = 0.1, Max = 5,
     Default = 1.4, Decimals = 2,
   })
   panel:AddControl("Slider", {
-    Label = "Level trim (dB)", Command = "ntx_audio_amptrim", Min = -20, Max = 12,
+    Label = "Level trim (dB)", Command = cv("amptrim"), Min = -20, Max = 12,
     Default = 0, Decimals = 1,
   })
   panel:AddControl("Slider", {
-    Label = "Current limit (A)", Command = "ntx_audio_ampilime", Min = 2, Max = 40,
+    Label = "Current limit (A)", Command = cv("ampilime"), Min = 2, Max = 40,
     Default = 19, Decimals = 1,
   })
-  dropdown(panel, "Output mode", "ntx_audio_ampmode", {
+  dropdown(panel, "Output mode", cv("ampmode"), {
     { "Dual (stereo)", "0" }, { "Bridge-mono", "1" }, { "Parallel-mono", "2" },
   })
-  dropdown(panel, "Output tap", "ntx_audio_amphiz", {
+  dropdown(panel, "Output tap", cv("amphiz"), {
     { "low-Z", "0" }, { "70 V", "70" }, { "100 V", "100" },
   })
-  dropdown(panel, "Front panel", "ntx_audio_ampmeters", {
+  dropdown(panel, "Front panel", cv("ampmeters"), {
     { "No meters", "0" }, { "Crown MA (IOC / ODEP)", "1" }, { "Crown CDi (3 LED)", "2" },
   })
   panel:AddControl("Slider", {
-    Label = "Crest RMS to peak (dB)", Command = "ntx_audio_ampcrest", Min = 0, Max = 24,
+    Label = "Crest RMS to peak (dB)", Command = cv("ampcrest"), Min = 0, Max = 24,
     Default = 12, Decimals = 1,
   })
   panel:AddControl("Slider", {
-    Label = "Thermal bias (x)", Command = "ntx_audio_ampthbias", Min = 0.5, Max = 2.5,
+    Label = "Thermal bias (x)", Command = cv("ampthbias"), Min = 0.5, Max = 2.5,
     Default = 1, Decimals = 2,
   })
   panel:AddControl("Label", {

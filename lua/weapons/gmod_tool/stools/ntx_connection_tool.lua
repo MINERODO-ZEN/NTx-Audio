@@ -23,6 +23,16 @@ TOOL.ClientConVar["bustrim"] = "1"
 TOOL.ClientConVar["buslabel"] = ""
 TOOL.ClientConVar["busflat"] = "0"
 
+-- The tool system creates one client convar per ClientConVar entry, named
+-- "<tool class>_<key>" (sandbox/entities/weapons/gmod_tool/stool.lua). The
+-- panel controls have to bind to that exact name: DForm rows run
+-- RunConsoleCommand on whatever they were given, so a bare key is just an
+-- "Unknown command" every time a slider moves. The server side still asks for
+-- the bare key, because GetClientInfo("busflat") resolves it from the table.
+local function cv(key)
+  return "ntx_connection_tool_" .. key
+end
+
 local function isLinkable(ent)
   return IsValid(ent) and (ent:GetClass() == "ntx_mixer" or ent:GetClass() == "ntx_speaker"
     or ent:GetClass() == "ntx_fallback_bus" or ent:GetClass() == "ntx_input_url"
@@ -168,31 +178,35 @@ function TOOL.BuildCPanel(panel)
   })
 
   panel:AddControl("Label", { Text = "INPUT  (right-click a ntx_input_url)" })
-  panel:AddControl("TextBox", { Label = "Stream URL", Command = "ntx_audio_url" })
+  panel:AddControl("TextBox", { Label = "Stream URL", Command = cv("url") })
   panel:AddControl("Slider", {
-    Label = "Input volume (0-2)", Command = "ntx_audio_inivol",
+    Label = "Input volume (0-2)", Command = cv("inivol"),
     Min = 0, Max = 2, Default = 1, Decimals = 2,
   })
   panel:AddControl("Slider", {
-    Label = "Max distance (units)", Command = "ntx_audio_inimaxd",
+    Label = "Max distance (units)", Command = cv("inimaxd"),
     Min = 100, Max = 10000, Default = 1200, Decimals = 0,
   })
 
   panel:AddControl("Label", { Text = "FALLBACK BUS  (right-click a ntx_fallback_bus)" })
   panel:AddControl("Slider", {
-    Label = "Bus trim (0-2)", Command = "ntx_audio_bustrim", Min = 0, Max = 2,
+    Label = "Bus trim (0-2)", Command = cv("bustrim"), Min = 0, Max = 2,
     Default = 1, Decimals = 2,
   })
-  panel:AddControl("TextBox", { Label = "Bus label", Command = "ntx_audio_buslabel" })
-  local right = panel:ComboBox("Bus playback", "ntx_audio_busflat")
+  panel:AddControl("TextBox", { Label = "Bus label", Command = cv("buslabel") })
+  -- Same DForm row as the amp and speaker tools: the label it binds is
+  -- "ntsl_<tool>_<key>", and the pick has to be written into that convar here
+  -- because RightClick reads it on the server.
+  local right = panel:ComboBox("Bus playback", cv("busflat"))
   right:SetTall(26)
   right:AddChoice("3D positional", "0")
   right:AddChoice("2D stereo", "1")
-  right.OnSelect = function(_, _, data)
-    RunConsoleCommand("ntx_audio_busflat " .. tostring(data or ""))
+  right.OnSelect = function(_, _, _, data)
+    local cvar = GetConVar(cv("busflat"))
+    if cvar and cvar:GetString() ~= tostring(data or "") then cvar:SetString(tostring(data or "")) end
   end
-  local flat = GetConVarString("ntx_audio_busflat")
-  if flat == "1" then right:ChooseOptionID(2) end
+  local flat = GetConVarString(cv("busflat"))
+  right:ChooseOptionID(flat)
   right:SetValue(flat)
 
   panel:AddControl("Label", { Text = "GIZMOS (owner-only: other players never see them)" })
