@@ -490,6 +490,17 @@ local function f(name, minv, maxv, step, label, set)
   return { name = name, min = minv, max = maxv, step = step or 1, label = label, set = set }
 end
 
+-- Some fields have no sensible single control. busmask is a bitfield: as a raw
+-- 0-255 slider it was a second writer for a property the per-channel MID/SUB
+-- dropdowns already own, and the two could disagree. Hidden keeps the entry in
+-- AmpFields so the server-side lookup and the patch window still work, while
+-- buildFields leaves it out of the panel.
+local function hidden(name, minv, maxv, step, label, set)
+  local e = f(name, minv, maxv, step, label, set)
+  e.hidden = true
+  return e
+end
+
 NTx.AmpFields = {
   f("channels", 1, 8, 1, "Channels", function(a, v) a:SetChannels(math.Clamp(math.floor(v + 0.5), 1, 8)) end),
   f("ratedw", 1, 20000, 5, "Rated W", function(a, v) a:SetRatedW(math.Clamp(v, 1, 20000)) end),
@@ -500,7 +511,7 @@ NTx.AmpFields = {
   f("ilime", 1, 60, 0.5, "Current limit (A)", function(a, v) a:SetIlime(math.Clamp(v, 1, 60)) end),
   f("mode", 0, 2, 1, "Mode", function(a, v) a:SetMode(math.Clamp(math.floor(v + 0.5), 0, 2)) end),
   f("hizv", 0, 240, 1, "Hi-Z tap (V)", function(a, v) a:SetHizVolt(math.Clamp(math.floor(v + 0.5), 0, 240)) end),
-  f("busmask", 0, 255, 1, "Bus per channel", function(a, v) a:SetBusMask(math.Clamp(math.floor(v + 0.5), 0, 255)) end),
+  hidden("busmask", 0, 255, 1, "Bus per channel", function(a, v) a:SetBusMask(math.Clamp(math.floor(v + 0.5), 0, 255)) end),
   f("meters", 0, 2, 1, "Meters", function(a, v) a:SetMeters(math.Clamp(math.floor(v + 0.5), 0, 2)) end),
   f("pfc", 0, 1, 1, "Active PFC", function(a, v) a:SetPFC(v > 0.5) end),
   f("hum", 0, 1, 1, "Mains hum", function(a, v) a:SetMainsHum(v > 0.5) end),

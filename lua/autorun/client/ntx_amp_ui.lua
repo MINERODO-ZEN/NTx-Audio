@@ -64,7 +64,7 @@ end
 -- panel and the server's validation read the same list.
 local function buildFields(parent, ent, fields, getter, sender)
   for _, entry in ipairs(fields) do
-    if entry.label ~= "" and entry.set then
+    if entry.label ~= "" and entry.set and not entry.hidden then
       local r = row(parent)
       local lbl = label(r, entry.label)
       lbl:SetWide(150)
