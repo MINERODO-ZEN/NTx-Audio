@@ -492,12 +492,19 @@ net.Receive("NTx.AmpEdit", function(_, ply)
   elseif kind == "link" then
     -- Cabinet bus assignment plus the amplifier's mode and tap, sent together
     -- so one undo step covers the whole patch.
+    --
+    -- A NULL mixer is allowed. It means "no mixer patched yet", and the bus
+    -- mask, mode and tap still have to apply - previously the early return here
+    -- threw the mask away with everything else, which is why picking a bus in
+    -- the patch window appeared to do nothing until a mixer was selected.
     local mixer = net.ReadEntity()
-    if not IsValid(mixer) or mixer:GetClass() ~= "ntx_mixer" then return end
+    mixer = (mixer:GetClass() == "ntx_mixer") and mixer or NULL
     local mask = net.ReadUInt(8)
+    local mode = net.ReadUInt(2)
+    local hiz = net.ReadUInt(8)
     amp:SetBusMask(mask)
-    amp:SetMode(net.ReadUInt(2))
-    amp:SetHizVolt(net.ReadUInt(8))
+    amp:SetMode(mode)
+    amp:SetHizVolt(hiz)
     amp:SetMixer(mixer)
     NTx.AmpSimDrop(amp)
     -- A channel that was MID and is now SUB cannot keep its full-range boxes.
@@ -515,8 +522,17 @@ net.Receive("NTx.AmpEdit", function(_, ply)
         end
       end
     end
-    ply:ChatPrint("[NTx] Amplifier linked to mixer " .. mixer:EntIndex()
-      .. " (" .. keep .. " cabinet(s) still on a matching channel).")
+    if IsValid(mixer) then
+      ply:ChatPrint("[NTx] Amplifier linked to mixer " .. mixer:EntIndex()
+        .. " (" .. keep .. " cabinet(s) still on a matching channel).")
+    else
+      local subs = 0
+      for bitv = mask, 1, 2 do
+        if bit.band(mask, bitv) ~= 0 then subs = subs + 1 end
+        if bitv > 128 then break end
+      end
+      ply:ChatPrint("[NTx] Amplifier bus set (" .. subs .. " SUB channel(s)); no mixer patched.")
+    end
   end
 
   NTx.BroadcastGraph()
