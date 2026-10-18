@@ -147,6 +147,7 @@ function NTx.BroadcastGraph(target)
       net.WriteFloat(ch.fader)
       net.WriteBool(ch.muted)
       net.WriteString(string.sub(ch.label or "", 1, 24))
+      net.WriteUInt(NTx.BusClamp(ch.bus), 3)
     end
   end
   if target then net.Send(target) else net.Broadcast() end
@@ -708,6 +709,9 @@ net.Receive("NTx.MixerEdit", function(_, ply)
     ch.Muted = net.ReadBool()
     local label = net.ReadString()
     ch.Label = string.sub(label or "", 1, 24)
+    -- Which bus/side this channel feeds. Read last so an older client that
+    -- stops after the label leaves the existing value alone.
+    ch.Bus = NTx.BusClamp(net.ReadUInt(3))
   elseif kind == "unlink" then
     local input = net.ReadEntity()
     if IsValid(input) then

@@ -138,6 +138,17 @@ local function wiredDown(ent)
   return false
 end
 
+-- Does anything feed this entity's named signal output?
+local function wiredDownPort(ent, port)
+  if not IsValid(ent) or not ent.Outputs then return false end
+  local o = ent.Outputs[port]
+  if not o then return false end
+  for _, dst in ipairs(o.Connected or {}) do
+    if IsValid(dst.Entity) then return true end
+  end
+  return false
+end
+
 -- ------------------------------------------------------------------ rebuild
 
 -- Re-derive every link from the wire graph. Cheap enough to run on demand, and
@@ -171,7 +182,7 @@ local function rebuild()
       local want = {}
       for i = 1, NTx.WIRE_MAX_MIX_CH do
         local src = NTx.WireUpstream(mixer, "In" .. i)
-        if IsValid(src) then want[#want + 1] = { Input = src, Fader = 1, Muted = false, Label = "" } end
+        if IsValid(src) then want[#want + 1] = { Input = src, Fader = 1, Muted = false, Label = "", Bus = 0 } end
       end
       local prev = mixer.Channels or {}
       -- Carry fader/mute/label across by input entity so re-patching a rig does
@@ -184,25 +195,32 @@ local function rebuild()
         local old = byInput[ch.Input]
         if old then
           ch.Fader, ch.Muted, ch.Label = old.Fader, old.Muted, old.Label
+          -- The bus assignment is a setting, so it has to survive a rebuild
+          -- exactly like the fader does.
+          ch.Bus = old.Bus
         end
       end
       mixer.Channels = want
     end
   end
 
-  -- Inputs and fallback buses: the mixer they are patched into. The signal
-  -- leaves on "Out" and lands on a mixer input, so the mixer is DOWNSTREAM here.
-  local function patchInto(ent)
+  -- Inputs and fallback buses: the mixer they are patched into.
+--
+  -- The port a source is found by depends on the entity: a playback source
+  -- publishes its four bus levels on "Buses", while a fallback bus is a single
+  -- full-spectrum channel and keeps the plain "Out". Getting this wrong would
+  -- silently unpatch every input in the rig.
+  local function patchInto(ent, outPort)
     local mixer
-    for _, dst in ipairs(NTx.WireDownstream(ent, "Out")) do
+    for _, dst in ipairs(NTx.WireDownstream(ent, outPort)) do
       if dst.ent:GetClass() == "ntx_mixer" then mixer = dst.ent break end
     end
     -- Unwired inputs keep the legacy mixer link.
-    if not mixer and not wiredDown(ent) then return end
+    if not mixer and not wiredDownPort(ent, outPort) then return end
     if ent:GetMixer() ~= mixer then ent:SetMixer(mixer) end
   end
-  for _, e in ipairs(inputs) do if IsValid(e) then patchInto(e) end end
-  for _, e in ipairs(buses) do if IsValid(e) then patchInto(e) end end
+  for _, e in ipairs(inputs) do if IsValid(e) then patchInto(e, "Buses") end end
+  for _, e in ipairs(buses) do if IsValid(e) then patchInto(e, "Out") end end
 
   -- Cabinets. Direct-to-amp keeps its channel; a series cabinet inherits the
   -- driver behind it; anything else resolves to the mixer at the head.

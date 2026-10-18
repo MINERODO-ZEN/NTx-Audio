@@ -39,57 +39,73 @@ function ENT:OnRemove()
   if NTx.BroadcastGraph then NTx.BroadcastGraph() end
 end
 
--- ------------------------------------------------------------ wire signal
-
--- Input levels land here. Wiremod delivers whatever the source entity last
--- output, so this is just a store; the mix itself is computed in Think so the
--- faders still apply after the fact.
 function ENT:TriggerInput(name, value)
   local n = tonumber(name:match("^In(%d+)$"))
   if not n then return end
   self.WireLevels = self.WireLevels or {}
-  self.WireLevels[n] = math.Clamp(tonumber(value) or 0, 0, 2)
+  -- The source sends its four bus levels as one ARRAY; keep them per channel
+  -- rather than collapsing to a single number, so the per-channel bus picker
+  -- decides which slot this source feeds.
+  local buses = nil
+  if istable(value) then buses = value end
+  self.WireLevels[n] = buses
 end
 
--- Mix of every wired input, honouring channel mute/fader plus the bus and
--- master faders. MID and SUB are summed separately because each amplifier
--- channel picks one of them, then the pair is summed in energy.
-function ENT:ComputeWireOut()
-  local levels = self.WireLevels or {}
-  local byInput = {}
+-- Which bus one mixer channel feeds. Stored on the channel and set from the
+-- panel, because the source does not know which of its four slots this
+-- particular channel consumes.
+local function channelBus(ch)
+  if not ch then return NTx.BUS_MIDL end
+  return NTx.BusClamp(ch.Bus)
+end
+
+-- Level of one bus/side, summed in energy across the channels assigned to it.
+-- Master and bus faders and mutes apply here, exactly as the client gain path
+-- does, so the level the amplifier sees is the level its cabinets are fed.
+function ENT:ComputeBusOut(bus)
+  if self:GetMasterMuted() then return 0 end
+  local isSub = NTx.BusIsSub(bus)
+  if isSub and self:GetSubMuted() then return 0 end
+  if not isSub and self:GetMidMuted() then return 0 end
+  local busFader = isSub and self:GetSubFader() or self:GetMidFader()
+  local base = NTx.FaderToGain(self:GetMasterFader()) * NTx.FaderToGain(busFader)
+
+  local energy = 0
   for _, ch in ipairs(self.Channels or {}) do
-    if IsValid(ch.Input) then byInput[ch.Input] = ch end
-  end
-  local mid, sub = 0, 0
-  local n = math.min(table.Count(levels), (NTx and NTx.WIRE_MAX_MIX_CH) or 16)
-  for i = 1, n do
-    local lvl = tonumber(levels[i]) or 0
-    if lvl > 0 then
-      local src = NTx.WireUpstream(self, "In" .. i)
-      local ch = IsValid(src) and byInput[src] or nil
-      if ch and ch.Muted then lvl = 0 end
-      if ch then lvl = lvl * NTx.FaderToGain(ch.Fader) end
-      local bus = "mid"
-      if ch and IsValid(ch.Input) and ch.Input.GetSpeakerType then
-        bus = ch.Input:GetSpeakerType() == "SUB" and "sub" or "mid"
+    if channelBus(ch) == bus then
+      local idx = nil
+      -- The channel's own position in the array of inputs, not its list index.
+      for i = 1, (NTx.WIRE_MAX_MIX_CH or 16) do
+        if NTx.WireUpstream(self, "In" .. i) == ch.Input then idx = i break end
       end
-      if bus == "sub" then sub = sub + lvl * lvl else mid = mid + lvl * lvl end
+      local src = idx and (self.WireLevels or {})[idx]
+      local lvl = istable(src) and (tonumber(src[bus + 1]) or 0) or 0
+      local g = ch.Muted and 0 or (base * NTx.FaderToGain(ch.Fader))
+      local e = g * lvl
+      energy = energy + e * e
     end
   end
-  if self:GetMasterMuted() then return 0 end
-  mid = math.sqrt(mid) * NTx.FaderToGain(self:GetMidFader()) * NTx.FaderToGain(self:GetMasterFader())
-  sub = math.sqrt(sub) * NTx.FaderToGain(self:GetSubFader()) * NTx.FaderToGain(self:GetMasterFader())
-  if self:GetMidMuted() then mid = 0 end
-  if self:GetSubMuted() then sub = 0 end
-  return math.Clamp(math.sqrt(mid * mid + sub * sub), 0, 2)
+  return math.Clamp(math.sqrt(energy), 0, 2)
 end
 
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
-  local out = self:ComputeWireOut()
-  if out ~= self.WireOut then
-    self.WireOut = out
-    NTx.WireOut(self, "Out", out)
+  local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR" }
+  local ids = (NTx and NTx.BUS_ID_PORTS) or { "MidLBus", "MidRBus", "SubLBus", "SubRBus" }
+  local names = (NTx and NTx.BUS_NAMES) or { "MidL", "MidR", "SubL", "SubR" }
+  self.WireOut = self.WireOut or {}
+  for b = 0, 3 do
+    local out = self:ComputeBusOut(b)
+    if out ~= self.WireOut[b] then
+      self.WireOut[b] = out
+      NTx.WireOut(self, levels[b + 1], out)
+    end
+    -- The identifier is constant, but it has to be published on a wire so the
+    -- amplifier learns its channel type by being wired rather than by a panel.
+    if self.WireOut["id" .. b] ~= b then
+      self.WireOut["id" .. b] = b
+      NTx.WireOut(self, ids[b + 1], b)
+    end
   end
 end
 
@@ -113,7 +129,9 @@ function ENT:EnsureChannel(input)
     if ch.Input == input then return ch end
   end
   if #self.Channels >= MAX_CHANNELS then return nil end
-  local ch = { Input = input, Fader = 1, Muted = false, Label = "" }
+  -- Bus this channel feeds, as a bus id (MidL/MidR/SubL/SubR). Defaults to
+  -- MID left; set from the mixer panel.
+  local ch = { Input = input, Fader = 1, Muted = false, Label = "", Bus = 0 }
   self.Channels[#self.Channels + 1] = ch
   return ch
 end

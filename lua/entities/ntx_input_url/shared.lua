@@ -15,9 +15,14 @@ function ENT:SetupDataTables()
   self:NetworkVar("Entity", 0, "Mixer")
 end
 
--- Signal port. "Out" is what the topology walk follows to find the mixer this
--- input is patched into. It carries a nominal 0-1 level, not the audio itself:
--- the real stream is decoded client side from StreamUrl.
+-- Signal port. "Buses" is an ARRAY of four levels, one per bus/side
+-- (MidL, MidR, SubL, SubR), because a source can feed any of them and the
+-- mixer decides which. Carrying them together keeps the whole routing
+-- decision downstream of the source, where the mixer faders live.
+--
+-- This replaces the single "Out" port. Only the fallback bus keeps a plain
+-- In/Out: it is one full-spectrum channel by design and has no bus split.
 function ENT:CreateWirePorts()
-  NTx.WireSetup(self, {}, {}, { "Out" }, { "Source level out, 0 to 1" }, 0, 1)
+  NTx.WireSetup(self, {}, {}, { "Buses" }, { "Level per bus [MidL, MidR, SubL, SubR]" },
+    0, 1, { [1] = "ARRAY" })
 end

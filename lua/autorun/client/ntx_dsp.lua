@@ -431,6 +431,7 @@ net.Receive("NTx.GraphSync", function()
       m.channels[#m.channels + 1] = {
         input = net.ReadEntity(), fader = net.ReadFloat(),
         muted = net.ReadBool(), label = net.ReadString(),
+        bus = net.ReadUInt(3),
       }
     end
     g.mixers[#g.mixers + 1] = m

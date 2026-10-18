@@ -199,3 +199,52 @@ function NTx.CoverageGain(allSpeakers, mixerEnt, listenerPos)
   end
   return best or 1
 end
+
+-- ------------------------------------------------------------------ bus ids
+--
+-- A source carries four independent levels: MID and SUB, left and right. They
+-- are separate because a MID bus and a SUB bus are genuinely different mixes -
+-- each has its own fader and mute - and the amplifier channel a signal lands on
+-- decides which of them the cabinets there should play.
+--
+-- The id is the wire contract between the mixer and the amplifier: the mixer
+-- publishes it on a port beside the level, so an amplifier learns what it is
+-- being fed by being wired, not by being told in a panel.
+NTx.BUS_MIDL, NTx.BUS_MIDR, NTx.BUS_SUBL, NTx.BUS_SUBR = 0, 1, 2, 3
+NTx.BUS_COUNT = 4
+
+-- Index of a bus inside the 4-value array a source carries. Same order as the
+-- ids above, which keeps the array index and the published identifier equal -
+-- one number means the same thing on both sides of the wire.
+NTx.BUS_NAMES = { "MidL", "MidR", "SubL", "SubR" }
+NTx.BUS_PORTS = { "MidL", "MidR", "SubL", "SubR" }
+NTx.BUS_ID_PORTS = { "MidLBus", "MidRBus", "SubLBus", "SubRBus" }
+
+function NTx.BusIsSub(id)
+  local n = math.floor(tonumber(id) or 0)
+  return n == NTx.BUS_SUBL or n == NTx.BUS_SUBR
+end
+
+function NTx.BusSide(id)
+  -- 0 = left, 1 = right.
+  return math.floor(tonumber(id) or 0) % 2
+end
+
+function NTx.BusName(id)
+  return NTx.BUS_NAMES[NTx.BusClamp(id) + 1] or "MidL"
+end
+
+function NTx.BusClamp(id)
+  return math.Clamp(math.floor(tonumber(id) or 0), 0, NTx.BUS_COUNT - 1)
+end
+
+-- Port name to id, for the amplifier reading what the mixer published:
+-- "SubR" -> 3, "SubLBus" -> 2.
+function NTx.BusOfPort(port)
+  if type(port) ~= "string" then return nil end
+  local base = port:gsub("Bus$", "")
+  for i, name in ipairs(NTx.BUS_PORTS) do
+    if base == name then return i - 1 end
+  end
+  return nil
+end

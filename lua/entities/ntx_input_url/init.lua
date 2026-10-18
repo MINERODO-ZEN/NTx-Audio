@@ -16,18 +16,35 @@ function ENT:Initialize()
   if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
 end
 
--- Emits the input volume scaled by the measured programme level. This is not
--- the audio: the client decodes StreamUrl itself. The wire carries the level
--- the source is actually producing, so a mixer wired downstream sums real
--- levels and the amplifier's load, heat and speaker drive follow the music.
--- With no recent measurement this stays at the fader value alone.
+-- Emits the input volume scaled by the measured programme level, once for each
+-- bus the source could feed. This is not the audio: the client decodes StreamUrl
+-- itself. The wire carries the level the source is producing so a mixer wired
+-- downstream can route it into the right bus and the amplifier's load, heat and
+-- speaker drive follow the music.
+--
+-- Every slot carries the same level. Which one the mixer consumes is its
+-- decision, per channel - that is what the per-channel bus picker is for. With
+-- no measurement this stays at the fader value alone.
 function ENT:Think()
-  self:NextThink(CurTime() + 0.25)
-  local gain = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
-  local out = gain * ((NTx.MeasuredRms and NTx.MeasuredRms(self)) or 1)
-  if out ~= self.WireOut then
-    self.WireOut = out
-    NTx.WireOut(self, "Out", out)
+  self:NextThink(CurTime() + 0.1)
+  local lvl = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
+    * ((NTx.MeasuredRms and NTx.MeasuredRms(self)) or 1)
+  local n = (NTx and NTx.BUS_COUNT) or 4
+  local changed = false
+  self.WireBuses = self.WireBuses or {}
+  for i = 1, n do
+    if self.WireBuses[i] ~= lvl then
+      self.WireBuses[i] = lvl
+      changed = true
+    end
+  end
+  if changed or self.WireOut == nil then
+    self.WireOut = lvl
+    -- A fresh table each time: Wiremod holds ARRAY values by reference, and
+    -- mutating the one it already stores would not re-trigger the fan-out.
+    local buses = {}
+    for i = 1, n do buses[i] = lvl end
+    NTx.WireOut(self, "Buses", buses)
   end
 end
 
