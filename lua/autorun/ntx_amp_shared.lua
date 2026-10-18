@@ -372,13 +372,15 @@ end
 
 -- Compact load text for labels and panels: what the cabinet is, and how it is
 -- wired to its amplifier channel.
+-- Describes what a cabinet presents. Series is deliberately NOT reported from
+-- the old hand-set group: that number is no longer what the simulation uses, it
+-- is derived from the wire chain, and the true group impedance is published on
+-- each cabinet's SeriesOhm wire output.
 function NTx.SpkOhmText(spk)
   if not IsValid(spk) then return "?" end
   local ohm = tonumber(spk:GetImpedance()) or 8
   local tap = math.floor(tonumber(spk:GetTapVolt()) or 0)
   if tap > 0 then return string.format("%d V tap / %g ohm", tap, ohm) end
-  local g = math.floor(tonumber(spk:GetSeriesGroup()) or 0)
-  if g > 0 then return string.format("%g ohm (series %d)", ohm, g) end
   return string.format("%g ohm", ohm)
 end
 
@@ -419,11 +421,18 @@ function NTx.SpkChannelLoad(list, hiZ)
   local groups, order = {}, {}
   local openCount, shortCount, memberCount = 0, 0, 0
   for _, sp in ipairs(list or {}) do
-    local g = hiZ and 0 or math.Clamp(math.floor(tonumber(sp.group) or 0), 0, 8)
-    local key = g
-    if g == 0 then
-      -- Ungrouped speakers are their own series group.
-      key = "s" .. tostring(sp.ent)
+    -- group is now a key derived from the wire chain (NTx.SpkSeriesKey), so it
+    -- is usually a string like "w123". A number is still accepted for an older
+    -- caller or a hand-set value. Either way the key just has to be equal for
+    -- cabinets in one series group, which is what makes their impedances add.
+    local key
+    if hiZ then
+      key = "hiZ" .. tostring(sp.ent)
+    elseif type(sp.group) == "string" then
+      key = sp.group
+    else
+      local g = math.Clamp(math.floor(tonumber(sp.group) or 0), 0, 8)
+      key = (g == 0) and ("s" .. tostring(sp.ent)) or g
     end
     if sp.blown then
       openCount = openCount + 1
@@ -544,9 +553,10 @@ NTx.SpkFields = {
   f("peakw", 0, 200000, 5, "Peak watts", function(s, v) s:SetPeakW(math.Clamp(v, 0, 200000)) end),
   f("minampw", 0, 100000, 5, "Min amp watts", function(s, v) s:SetMinAmpW(math.Clamp(v, 0, 100000)) end),
   f("tapv", 0, 240, 1, "Hi-Z tap", function(s, v) s:SetTapVolt(math.Clamp(math.floor(v + 0.5), 0, 240)) end),
-  f("seriesgrp", 0, 8, 1, "Series group", function(s, v) s:SetSeriesGroup(math.Clamp(math.floor(v + 0.5), 0, 8)) end),
+  hidden("seriesgrp", 0, 8, 1, "Series group", function(s, v) s:SetSeriesGroup(math.Clamp(math.floor(v + 0.5), 0, 8)) end),
   f("active", 0, 1, 1, "Active (self-powered)", function(s, v) s:SetActive(v > 0.5) end),
-  f("ampch", 0, 8, 1, "Amp channel", function(s, v) s:SetAmpChannel(math.Clamp(math.floor(v + 0.5), 0, 8)) end),
+  -- Channel is owned by the wire graph, which overwrites anything set here.
+  hidden("ampch", 0, 8, 1, "Amp channel", function(s, v) s:SetAmpChannel(math.Clamp(math.floor(v + 0.5), 0, 8)) end),
 }
 
 function NTx.SpkField(name)

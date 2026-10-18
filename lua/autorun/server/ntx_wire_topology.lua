@@ -231,6 +231,47 @@ local function touch()
 end
 NTx.WireTopologyTouch = touch
 
+-- Every cabinet in this speaker's chain, INCLUDING itself, walked both ways.
+--
+-- "Chain" means the run of cabinets joined by the In/Out signal ports. Walking
+-- stops at anything that is not a cabinet (an amplifier, a mixer), which keeps
+-- two separate stacks from being merged. The seen set guards against a loop
+-- someone wires by accident.
+function NTx.WireChain(spk)
+  local out, seen = {}, {}
+  local function step(ent)
+    while IsValid(ent) and ent:GetClass() == "ntx_speaker" and not seen[ent] do
+      seen[ent] = true
+      out[#out + 1] = ent
+      ent = NTx.WireUpstream(ent, "In")
+    end
+  end
+  step(spk)
+  for _, d in ipairs(NTx.WireDownstream(spk, "Out")) do step(d.ent) end
+  return out
+end
+
+-- Stable identity for the electrical series group a cabinet belongs to.
+--
+-- Series wiring used to be a hand-set "Series group" number on the speaker. Now
+-- that In/Out define the chain, the group is derived: every cabinet in one chain
+-- gets the same key (the lowest entity index in it), so the simulation adds
+-- their impedances together exactly as the old manual setting did, and the
+-- number can no longer disagree with the wiring.
+function NTx.SpkSeriesKey(spk)
+  if not IsValid(spk) then return nil end
+  local chain = NTx.WireChain(spk)
+  if not chain or #chain < 2 then
+    -- A lone cabinet is its own group, which is what the old group 0 meant.
+    return "s" .. tostring(spk:EntIndex())
+  end
+  local min = spk:EntIndex()
+  for _, e in ipairs(chain) do
+    if e:EntIndex() < min then min = e:EntIndex() end
+  end
+  return "w" .. tostring(min)
+end
+
 -- ------------------------------------------------------------------ events
 
 -- Wiremod fires these as entity methods, not gamemode hooks (wirelib.lua).

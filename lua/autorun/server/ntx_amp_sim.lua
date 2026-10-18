@@ -220,7 +220,10 @@ local function stepAmp(amp, now, dt)
       if sc == pair[1] or sc == pair[2] then
         list[#list + 1] = {
           ent = spk, ohm = spk:GetImpedance(), tapVolt = spk:GetTapVolt(),
-          group = spk:GetSeriesGroup(), stype = spk:GetSpeakerType(),
+          -- Series grouping is derived from the wire chain, not hand-set: every
+          -- cabinet joined In/Out to others shares one group key, so their
+          -- impedances add the way a real series pair does.
+          group = NTx.SpkSeriesKey(sp.ent), stype = spk:GetSpeakerType(),
           blown = spk:GetBlown(),
         }
         spkEnts[#spkEnts + 1] = spk

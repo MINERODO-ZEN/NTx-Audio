@@ -23,8 +23,6 @@ TOOL.ClientConVar["spkrmsw"] = "500"
 TOOL.ClientConVar["spkpeakw"] = "1000"
 TOOL.ClientConVar["spkminampw"] = "350"
 TOOL.ClientConVar["spktapv"] = "0"
-TOOL.ClientConVar["spkseries"] = "0"
-TOOL.ClientConVar["spkampch"] = "0"
 TOOL.ClientConVar["spkactive"] = "0"
 -- The panel's save row writes the name here; it is a workspace, not a setting.
 TOOL.ClientConVar["spksavename"] = ""
@@ -89,9 +87,7 @@ function TOOL:RightClick(tr)
   ent:SetPeakW(math.Clamp(self:GetClientNumber("spkpeakw", 1000), 0, 200000))
   ent:SetMinAmpW(math.Clamp(self:GetClientNumber("spkminampw", 350), 0, 100000))
   ent:SetTapVolt(math.Clamp(math.floor(self:GetClientNumber("spktapv", 0)), 0, 240))
-  ent:SetSeriesGroup(math.Clamp(math.floor(self:GetClientNumber("spkseries", 0)), 0, 8))
   ent:SetActive(self:GetClientNumber("spkactive", 0) ~= 0)
-  ent:SetAmpChannel(math.Clamp(math.floor(self:GetClientNumber("spkampch", 0)), 0, 8))
   ply:ChatPrint("[NTx] Cabinet: " .. ent:GetSpeakerType() .. " [" .. ent:GetArrayId() .. "]"
     .. (ent:GetReversed() and " REV" or "")
     .. (ent:GetSelfCardioid() and " SC" or "")
@@ -244,14 +240,6 @@ function TOOL.BuildCPanel(panel)
   panel:AddControl("Slider", {
     Label = "Min amp watts", Command = cv("spkminampw"), Min = 0, Max = 3000,
     Default = 350, Decimals = 0,
-  })
-  panel:AddControl("Slider", {
-    Label = "Series group (0-8)", Command = cv("spkseries"), Min = 0, Max = 8,
-    Default = 0, Decimals = 0,
-  })
-  panel:AddControl("Slider", {
-    Label = "Amp channel (0 = auto)", Command = cv("spkampch"), Min = 0, Max = 8,
-    Default = 0, Decimals = 0,
   })
   dropdown(panel, "Hi-Z tap", cv("spktapv"), {
     { "low-Z", "0" }, { "70 V", "70" }, { "100 V", "100" },
