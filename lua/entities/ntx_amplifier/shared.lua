@@ -179,7 +179,14 @@ function ENT:CreateWirePorts()
     outNames[#outNames + 1] = name
     outDesc[#outDesc + 1] = desc
   end
+  -- Per-channel signal in/out. These are the ports the topology walk follows:
+  -- a mixer's "Out" lands on Ch<N>In, and Ch<N>Out feeds the cabinets.
   for i = 1, n do
+    inNames[#inNames + 1] = "Ch" .. i .. "In"
+    inDesc[#inDesc + 1] = "Signal level into channel " .. i .. ", 0 to 1"
+  end
+  for i = 1, n do
+    add("Ch" .. i .. "Out", "Output signal level on channel " .. i .. ", 0 to 1")
     add("Ch" .. i .. "Amps", "Output current, amperes RMS (load)")
     add("Ch" .. i .. "Volt", "Output voltage, volts RMS")
     add("Ch" .. i .. "Watt", "Output power, watts")
@@ -198,7 +205,7 @@ function ENT:CreateWirePorts()
   add("GainRedDb", "Thermal gain reduction, dB")
   add("Damage", "Cumulative damage, 0 to 1")
   add("FaultCode", "0 none / 1 brownout / 2 overvoltage / 3 no mains / 4 thermal / 5 overload / 6 short / 7 DC / 8 burnt")
-  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc)
+  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, 3 + n, 2 * n)
 end
 
 function ENT:OnChannelsChanged()

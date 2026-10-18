@@ -13,6 +13,26 @@ function ENT:Initialize()
   local phys = self:GetPhysicsObject()
   if IsValid(phys) then phys:Wake() end
   if self:GetTrim() == 0 then self:SetTrim(1) end
+  self.WireIn = 0
+  self.WireOut = -1
+  self:CreateWirePorts()
+  if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
+end
+
+-- Pass-through with the bus trim applied, so the same level that reaches a
+-- wired mixer output also reaches a legacy client's single flat tap.
+function ENT:TriggerInput(name, value)
+  if name ~= "In" then return end
+  self.WireIn = math.Clamp(tonumber(value) or 0, 0, 2)
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + 0.1)
+  local out = math.Clamp((self.WireIn or 0) * NTx.FaderToGain(self:GetTrim()), 0, 2)
+  if out ~= self.WireOut then
+    self.WireOut = out
+    NTx.WireOut(self, "Out", out)
+  end
 end
 
 function ENT:SpawnFunction(ply, tr)

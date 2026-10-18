@@ -121,6 +121,21 @@ local function busLevel(mixer, bus)
   return math.sqrt(energy)
 end
 
+-- Input level reaching one amplifier channel.
+--
+-- Wires first: if anything is wired into this channel's Ch<N>In, that level is
+-- the truth and the mixer bus is not consulted at all. Nothing wired means the
+-- rig is not on the wire graph yet, so fall back to the old bus sum rather than
+-- going silent - a half-built rig still makes noise.
+local function channelInput(amp, ch, mixer, bus)
+  local sig = amp.WireSignal
+  if istable(sig) then
+    local v = sig[ch]
+    if tonumber(v) then return math.Clamp(tonumber(v), 0, 2) end
+  end
+  return busLevel(mixer, bus)
+end
+
 -- ------------------------------------------------------------ integration
 
 local function approach(cur, target, dt, tau)
@@ -172,7 +187,7 @@ local function stepAmp(amp, now, dt)
     if IsValid(mixer) then
       for _, ch in ipairs(amp:ActiveChannels()) do
         local bus = bit.band(busMask, bit.lshift(1, ch - 1)) ~= 0 and "sub" or "mid"
-        if busLevel(mixer, bus) > 0.001 then quiet = false break end
+        if channelInput(amp, ch, mixer, bus) > 0.001 then quiet = false break end
       end
     end
     if quiet then
@@ -224,7 +239,8 @@ local function stepAmp(amp, now, dt)
     gainDb = gainDb + (amp:GetTrim() or 0)
 
     local mixer = amp:GetMixer()
-    local lin = (not powered or locked or standby) and 0 or busLevel(mixer, isSub and "sub" or "mid")
+    local lin = (not powered or locked or standby) and 0
+      or channelInput(amp, ch, mixer, isSub and "sub" or "mid")
     local vScaled = NTx.AmpLinToVolts(lin) * NTx.AmpVoltRatio(gainDb)
 
     -- Damage already taken costs clean output before anything else does.
@@ -315,6 +331,12 @@ local function stepAmp(amp, now, dt)
     c.lin = lin
     c.vout = vOut
     c.vmax = vmax
+    -- What the cabinets downstream actually receive, expressed as a 0-1 level
+    -- against this channel's own ceiling. Pushed to Ch<N>Out so a wired
+    -- downstream cabinet sees the gain-reduced value, not the raw input.
+    if amp.SetWireChannelLevel then
+      amp:SetWireChannelLevel(ch, (vmax or 1) > 0 and math.Clamp((vOut or 0) / vmax, 0, 2) or 0)
+    end
     c.clip = clip
     c.i = amps
     c.w = watts

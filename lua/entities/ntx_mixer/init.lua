@@ -18,6 +18,10 @@ function ENT:Initialize()
   if self:GetMidFader() == 0 then self:SetMidFader(1) end
   if self:GetSubFader() == 0 then self:SetSubFader(1) end
   self.Channels = {}
+  self.WireLevels = {}
+  self.WireOut = 0
+  self:CreateWirePorts()
+  if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
   NTx.Mixers[self] = true
 end
 
@@ -33,6 +37,60 @@ function ENT:OnRemove()
     if IsValid(e) and e:GetMixer() == self then e:SetMixer(NULL) end
   end
   if NTx.BroadcastGraph then NTx.BroadcastGraph() end
+end
+
+-- ------------------------------------------------------------ wire signal
+
+-- Input levels land here. Wiremod delivers whatever the source entity last
+-- output, so this is just a store; the mix itself is computed in Think so the
+-- faders still apply after the fact.
+function ENT:TriggerInput(name, value)
+  local n = tonumber(name:match("^In(%d+)$"))
+  if not n then return end
+  self.WireLevels = self.WireLevels or {}
+  self.WireLevels[n] = math.Clamp(tonumber(value) or 0, 0, 2)
+end
+
+-- Mix of every wired input, honouring channel mute/fader plus the bus and
+-- master faders. MID and SUB are summed separately because each amplifier
+-- channel picks one of them, then the pair is summed in energy.
+function ENT:ComputeWireOut()
+  local levels = self.WireLevels or {}
+  local byInput = {}
+  for _, ch in ipairs(self.Channels or {}) do
+    if IsValid(ch.Input) then byInput[ch.Input] = ch end
+  end
+  local mid, sub = 0, 0
+  local n = math.min(table.Count(levels), (NTx and NTx.WIRE_MAX_MIX_CH) or 16)
+  for i = 1, n do
+    local lvl = tonumber(levels[i]) or 0
+    if lvl > 0 then
+      local src = NTx.WireUpstream(self, "In" .. i)
+      local ch = IsValid(src) and byInput[src] or nil
+      if ch and ch.Muted then lvl = 0 end
+      if ch then lvl = lvl * NTx.FaderToGain(ch.Fader) end
+      local bus = "mid"
+      if ch and IsValid(ch.Input) and ch.Input.GetSpeakerType then
+        bus = ch.Input:GetSpeakerType() == "SUB" and "sub" or "mid"
+      end
+      if bus == "sub" then sub = sub + lvl * lvl else mid = mid + lvl * lvl end
+    end
+  end
+  if self:GetMasterMuted() then return 0 end
+  mid = math.sqrt(mid) * NTx.FaderToGain(self:GetMidFader()) * NTx.FaderToGain(self:GetMasterFader())
+  sub = math.sqrt(sub) * NTx.FaderToGain(self:GetSubFader()) * NTx.FaderToGain(self:GetMasterFader())
+  if self:GetMidMuted() then mid = 0 end
+  if self:GetSubMuted() then sub = 0 end
+  return math.Clamp(math.sqrt(mid * mid + sub * sub), 0, 2)
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + 0.1)
+  local out = self:ComputeWireOut()
+  if out ~= self.WireOut then
+    self.WireOut = out
+    NTx.WireOut(self, "Out", out)
+  end
 end
 
 function ENT:SpawnFunction(ply, tr)

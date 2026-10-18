@@ -16,3 +16,10 @@ function ENT:SetupDataTables()
   self:NetworkVar("Bool", 0, "Flat2D", { KeyName = "flat2d", Edit = { type = "Boolean", order = 3, category = "NTx" } })
   self:NetworkVar("Entity", 0, "Mixer")
 end
+
+-- Signal port. A fallback bus takes whatever level arrives and re-emits it, so
+-- legacy clients can sit on a mix without the mixer being involved.
+function ENT:CreateWirePorts()
+  NTx.WireSetup(self, { "In" }, { "Signal level in, 0 to 1" },
+    { "Out" }, { "Signal level out, 0 to 1" }, 1, 1)
+end

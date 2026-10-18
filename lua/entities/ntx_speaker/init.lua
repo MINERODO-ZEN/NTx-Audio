@@ -4,6 +4,9 @@ include("shared.lua")
 
 function ENT:Initialize()
   self:CreateWirePorts()
+  self.WireIn = 0
+  self.WireOut = -1
+  if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
   self:SetModel("models/hunter/blocks/cube025x025x025.mdl")
   self:SetMaterial("models/debug/debugwhite")
   self:SetColor(Color(30, 30, 30, 120))
@@ -28,6 +31,31 @@ function ENT:Initialize()
   if self:GetImpedance() <= 0 then self:SetImpedance(self:GetTapVolt() > 0 and 100 or 8) end
   if self:GetRmsW() <= 0 then self:SetRmsW(100) end
   if self:GetPeakW() <= 0 then self:SetPeakW(self:GetRmsW() * 2) end
+end
+
+-- ------------------------------------------------------------ wire signal
+
+-- Level arrives from whatever drives this box. A blown or disabled cabinet
+-- stops passing it on, so a series stack downstream goes quiet instead of
+-- carrying a level the driver can no longer produce.
+function ENT:TriggerInput(name, value)
+  if name ~= "In" then return end
+  self.WireIn = math.Clamp(tonumber(value) or 0, 0, 2)
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + 0.1)
+  local out = 0
+  if self:GetActive() then
+    -- Self-powered cabinets are their own source; series wiring does not apply.
+    out = 1
+  elseif not self:GetBlown() then
+    out = self.WireIn or 0
+  end
+  if out ~= self.WireOut then
+    self.WireOut = out
+    NTx.WireOut(self, "Out", out)
+  end
 end
 
 function ENT:SpawnFunction(ply, tr)

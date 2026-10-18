@@ -11,6 +11,21 @@ function ENT:Initialize()
   if IsValid(phys) then phys:Wake() end
   if self:GetInputVolume() == 0 then self:SetInputVolume(1) end
   if self:GetMaxDist() == 0 then self:SetMaxDist(1200) end
+  self.WireOut = -1
+  self:CreateWirePorts()
+  if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
+end
+
+-- Emits the input volume as a nominal level. This is not the audio: the client
+-- decodes StreamUrl itself. It exists so a rig wired entirely on signal levels
+-- has something to carry, and so an unplugged chain visibly goes to zero.
+function ENT:Think()
+  self:NextThink(CurTime() + 0.25)
+  local out = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
+  if out ~= self.WireOut then
+    self.WireOut = out
+    NTx.WireOut(self, "Out", out)
+  end
 end
 
 function ENT:SpawnFunction(ply, tr)

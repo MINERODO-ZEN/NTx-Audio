@@ -14,3 +14,10 @@ function ENT:SetupDataTables()
   self:NetworkVar("Bool", 0, "Looping")
   self:NetworkVar("Entity", 0, "Mixer")
 end
+
+-- Signal port. "Out" is what the topology walk follows to find the mixer this
+-- input is patched into. It carries a nominal 0-1 level, not the audio itself:
+-- the real stream is decoded client side from StreamUrl.
+function ENT:CreateWirePorts()
+  NTx.WireSetup(self, {}, {}, { "Out" }, { "Source level out, 0 to 1" }, 0, 1)
+end

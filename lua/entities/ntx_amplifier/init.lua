@@ -19,8 +19,21 @@ function ENT:Initialize()
   -- Wire-fed mains take over as soon as anything drives the input; until then
   -- the amp reads the server's external grid value.
   self.WireMains = {}
+  self.WireSignal = {}
+  self.WireLevelsOut = {}
+  if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
   self.Injected = ""
   NTx.Amplifiers[self] = true
+end
+
+-- The simulation writes the per-channel output level here once per tick, so the
+-- wire value reflects what the amp is really doing rather than what was fed in.
+function ENT:SetWireChannelLevel(ch, level)
+  self.WireLevelsOut = self.WireLevelsOut or {}
+  local v = math.Clamp(tonumber(level) or 0, 0, 2)
+  if self.WireLevelsOut[ch] == v then return end
+  self.WireLevelsOut[ch] = v
+  if NTx.WireChannelOf then NTx.WireOut(self, NTx.WireSigPortOut(ch), v) end
 end
 
 function ENT:OnRemove()
@@ -49,8 +62,12 @@ function ENT:SpawnFunction(ply, tr)
 end
 
 -- Wire inputs. MainsV is the interesting one: whatever the external power
--- simulation puts on it wins over the amp's own override, which is how a
--- venue-wide brownout reaches every amplifier at once.
+  -- simulation puts on it wins over the amp's own override, which is how a
+  -- venue-wide brownout reaches every amplifier at once.
+  --
+  -- Ch<N>In is the signal level per channel. Wiremod fires this on connect and
+  -- on every output change, so the value is simply the latest one received;
+  -- the simulation reads it instead of summing the mixer bus itself.
 function ENT:TriggerInput(name, value)
   self.WireMains = self.WireMains or {}
   local v = tonumber(value) or 0
@@ -60,6 +77,12 @@ function ENT:TriggerInput(name, value)
     self.WireMains.a = v
   elseif name == "MainsHz" then
     self.WireMains.hz = v
+  else
+    local ch = NTx.WireChannelOf and NTx.WireChannelOf(name) or nil
+    if ch then
+      self.WireSignal = self.WireSignal or {}
+      self.WireSignal[ch] = math.Clamp(v, 0, 2)
+    end
   end
 end
 

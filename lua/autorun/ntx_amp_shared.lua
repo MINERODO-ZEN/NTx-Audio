@@ -565,20 +565,69 @@ function NTx.AllSpeakerProfiles()
   for id, p in pairs(NTx.SavedSpeakerProfiles) do out[#out + 1] = p end
   return out
 end
-
 -- ---------------------------------------------------------------- wire glue
 
 -- Wiremod ships with GMod but servers do remove it, and an amplifier without a
 -- wire view is still a working amplifier. Every port call goes through these
--- two guards so a Wiremod-less server never errors on spawn.
-function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc)
+-- guards so a Wiremod-less server never errors on spawn.
+
+-- Custom signal type. Wiremod's port types are plain strings in WireLib.DT
+-- (wire/server/wirelib.lua), and the linker only accepts identical types
+-- (wirelib.lua:848), so giving signal ports their own type means a Ch1In can
+-- never be wired to a Watt readout or to an unrelated entity's input by
+-- accident. Telemetry stays NORMAL so generic wire readers still work on it.
+NTx.WIRE_SIG_TYPE = "NTXSIG"
+
+local function registerWireTypes()
+  if not WireLib or not WireLib.DT then return end
+  if WireLib.DT[NTx.WIRE_SIG_TYPE] then return end
+  WireLib.DT[NTx.WIRE_SIG_TYPE] = {
+    Zero = function() return 0 end,
+    Validator = function(v) return isnumber(v) end,
+  }
+  if WireLib.registerDebuggerFormat then
+    pcall(WireLib.registerDebuggerFormat, NTx.WIRE_SIG_TYPE, function(v)
+      return string.format("%.3f", tonumber(v) or 0)
+    end)
+  end
+end
+NTx.RegisterWireTypes = registerWireTypes
+
+-- Both sides are Adjust-aware: the amplifier's port list follows its channel
+-- count, so a rebuild has to be able to replace an existing port table instead
+-- of failing on a duplicate create. Inputs and outputs are handled separately
+-- because an entity can legitimately have one and not the other.
+local function wireAdjust(fn, ent, names, types, desc)
+  if #names == 0 then return end
+  pcall(fn, ent, names, types, desc)
+end
+
+-- sigNames/nSig marks the leading ports as signal-level so they get the custom
+-- type; everything else stays NORMAL telemetry.
+function NTx.WireSetup(ent, inNames, inDesc, outNames, outDesc, sigIns, sigOuts)
   if not Wire_CreateInputs or not Wire_CreateOutputs then return false end
-  if #inNames > 0 then pcall(Wire_CreateInputs, ent, inNames, inDesc) end
-  if #outNames == 0 then return true end
-  if ent.Outputs and Wire_AdjustOutputs then
-    pcall(Wire_AdjustOutputs, ent, outNames, outDesc)
-  else
-    pcall(Wire_CreateOutputs, ent, outNames, outDesc)
+  inNames, inDesc = inNames or {}, inDesc or {}
+  outNames, outDesc = outNames or {}, outDesc or {}
+  registerWireTypes()
+  local sig = NTx.WIRE_SIG_TYPE
+
+  local function typeList(names, count)
+    local t = {}
+    for i = 1, #names do
+      t[i] = (tonumber(count) and i <= tonumber(count)) and sig or "NORMAL"
+    end
+    return t
+  end
+
+  if #inNames > 0 then
+    local fn = (ent.Inputs and WireLib.AdjustSpecialInputs) and WireLib.AdjustSpecialInputs
+      or WireLib.CreateSpecialInputs
+    wireAdjust(fn, ent, inNames, typeList(inNames, sigIns), inDesc)
+  end
+  if #outNames > 0 then
+    local fn = (ent.Outputs and WireLib.AdjustSpecialOutputs) and WireLib.AdjustSpecialOutputs
+      or WireLib.CreateSpecialOutputs
+    wireAdjust(fn, ent, outNames, typeList(outNames, sigOuts), outDesc)
   end
   return true
 end
@@ -651,7 +700,7 @@ end
 -- both have to be current before anything can be tested; printing the stamp on
 -- load makes "the game is still running yesterday's Lua" a one-glance answer
 -- instead of a guessing game.
-NTx.BUILD = "7deb8bb+modwatch"
+NTx.BUILD = "wiresig1"
 
 if SERVER then
   util.AddNetworkString("NTx.Hello")
