@@ -96,7 +96,7 @@ net.Receive("NTx.AmpSync", function()
     local nch = net.ReadUInt(4)
     for _ = 1, nch do
       local flags = net.ReadUInt(8)
-      a.ch[#a.ch + 1] = {
+      local c = {
         sub = bit.band(flags, 1) ~= 0,
         protect = bit.band(flags, 2) ~= 0,
         muted = bit.band(flags, 4) ~= 0,
@@ -109,6 +109,12 @@ net.Receive("NTx.AmpSync", function()
         i = ru() / 100, w = ru() / 2, z = ru() / 4,
         gainred = rd(20),
       }
+      -- This message is the slow 10 Hz estimate. cmdDb keeps a copy as the
+      -- baseline for the client-side fallback blend; NTx.AmpMeters overwrites
+      -- linDb itself at the real rate. Reading the same value twice rather
+      -- than adding a field keeps the wire format unchanged.
+      c.cmdDb = c.linDb
+      a.ch[#a.ch + 1] = c
     end
     local nspk = net.ReadUInt(6)
     for _ = 1, nspk do
@@ -193,16 +199,22 @@ end
 -- What the meters should read for one channel: dBu at the amplifier input and
 -- the output level relative to that channel's own clipping ceiling.
 --
--- The server's numbers are a commanded-level estimate (identical for everyone,
--- because the simulation has to be deterministic). When the page is reporting a
--- real RMS the estimate gets scaled by how much quieter or louder the actual
--- signal turned out to be, so the LEDs dance with the programme while the rail,
--- clip and thermal state stay authoritative.
+-- The level is the server's. This used to recompute linDb from page RMS and
+-- fader positions whenever a mixer was attached, which silently discarded the
+-- authoritative value arriving on NTx.AmpMeters and left a second, disagreeing
+-- model of the same rig on screen. That blend is now only a fallback for the
+-- window before the first server level lands, or when the simulation is off.
 function NTx.AmpChannelMeter(ent, ch)
   local rec = NTx.AmpRecord(ent)
   local c = rec and rec.ch[ch]
   if not c then return { linDb = -120, below = -120 } end
   local linDb, below = c.linDb, c.below
+  -- A level the simulation actually produced wins outright.
+  if c.linFromServer then
+    return { linDb = linDb, below = below, clip = c.clip, protect = c.protect }
+  end
+  -- Otherwise fall back to the slow estimate, scaled by the page's real RMS.
+  linDb = c.cmdDb or linDb
   local mixer = ent.GetMixer and ent:GetMixer()
   local bus = c.sub and "sub" or "mid"
   if IsValid(mixer) and anyRms(mixer, bus) then
@@ -728,6 +740,9 @@ net.Receive("NTx.AmpMeters", function()
           c.linDb = db
           c.clip = clip
           c.protect = protect
+          -- Tells NTx.AmpChannelMeter this is a real simulated level and not
+          -- the commanded estimate, so it stops second-guessing it.
+          c.linFromServer = true
         end
       else
         -- No AmpSync record yet: the values are still consumed so the read

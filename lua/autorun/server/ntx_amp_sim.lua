@@ -18,8 +18,17 @@ NTx = NTx or {}
 NTx.AmpState = NTx.AmpState or {}
 NTx.SpkState = NTx.SpkState or {}
 
-local SIM_HZ = 10
-local TICK = 1 / SIM_HZ
+-- Simulation interval. This was hardcoded to 10 Hz, which capped everything
+-- downstream: the meters cannot show faster movement than the data they are
+-- computed from, so no sync rate could make them look fast. It is now a convar
+-- because the cost is real - every amplifier takes a full thermal pass per tick.
+local function simHz()
+  local cv = GetConVar("ntx_amp_sim_hz")
+  return math.Clamp(cv and cv:GetFloat() or 60, 1, 130)
+end
+
+CreateConVar("ntx_amp_sim_hz", "60", FCVAR_ARCHIVE + FCVAR_REPLICATED,
+  "Simulation rate cap (Hz). The meters cannot move faster than this.")
 
 CreateConVar("ntx_amp_sim", "1", FCVAR_ARCHIVE + FCVAR_REPLICATED,
   "Run the amplifier/speaker simulation (0 = amplifiers are inert boxes, audio passes through untouched)")
@@ -563,6 +572,7 @@ local nextTick = 0
 hook.Add("Think", "NTx.AmpSim", function()
   if CurTime() < nextTick then return end
   local now = CurTime()
+  local TICK = 1 / simHz()
   local dt = math.min(now - (nextTick - TICK), 0.5)
   if dt <= 0 then dt = TICK end
   nextTick = now + TICK
