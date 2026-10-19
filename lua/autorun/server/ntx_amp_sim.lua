@@ -148,9 +148,22 @@ end
 -- going silent - a half-built rig still makes noise.
 local function channelInput(amp, ch, mixer, bus)
   local sig = amp.WireSignal
+  local fed = false
   if istable(sig) then
     local v = sig[ch]
-    if tonumber(v) then return math.Clamp(tonumber(v), 0, 2) end
+    if tonumber(v) then
+      fed = true
+      return math.Clamp(tonumber(v), 0, 2)
+    end
+  end
+  -- The bus fallback is for a rig that is not on the wire graph at all. Once
+  -- ANY channel of this amplifier is fed by a wire, the rig IS on the wire
+  -- graph, and a channel with nothing wired to it is simply not connected -
+  -- falling back to the bus gave it a copy of another channel's level, which
+  -- is how a meter on an unconnected channel showed the connected one's signal.
+  if amp.ChannelIsFed and amp:ChannelIsFed(ch) then return 0 end
+  for i = 1, math.Clamp(math.floor(tonumber(amp:GetChannels()) or 2), 1, 8) do
+    if amp.ChannelIsFed and amp:ChannelIsFed(i) then return 0 end
   end
   return busLevel(mixer, bus)
 end
@@ -373,6 +386,16 @@ local function stepAmp(amp, now, dt)
     anyProtect = anyProtect or protect
 
     c.linDb = NTx.AmpDb(lin) + NTx.AMP_FS_DBU
+    -- A level outside the possible range is a bug, and a silent one: the meter
+    -- shows a number no signal can produce. Name it when it happens rather
+    -- than leaving it to be found in a screenshot.
+    if c.linDb > 30 or c.linDb < -120 then
+      if not st.warnedLevel then
+        st.warnedLevel = true
+        print(string.format("[NTx] amplifier %d channel %d produced an impossible level %.1f dBu (lin=%s)",
+          amp:EntIndex(), ch, c.linDb, tostring(lin)))
+      end
+    end
     c.lin = lin
     c.vout = vOut
     c.vmax = vmax

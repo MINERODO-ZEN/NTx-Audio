@@ -54,7 +54,11 @@ NTx.AMP_CREST_DEFAULT = 12
 function NTx.AmpDb(x)
   x = tonumber(x) or 0
   if x <= 0.000001 then return -120 end
-  return 20 * math.log(x, 10)
+  -- Divided by log(10) rather than asking for a base: GLua's math.log does not
+  -- promise the two-argument form, and when it is ignored this returns the
+  -- NATURAL log - so -6 dB reads as -13.9 and -24 dB as -55. GainToDb below
+  -- already does it this way.
+  return 20 * math.log(x) / math.log(10)
 end
 
 function NTx.AmpVoltRatio(db)
