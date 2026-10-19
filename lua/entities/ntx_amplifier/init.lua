@@ -13,7 +13,11 @@ function ENT:Initialize()
   local phys = self:GetPhysicsObject()
   if IsValid(phys) then phys:Wake() end
   self:CreateWirePorts()
-  if self:GetProfile() == "" then self:ApplyAmpProfile("cdi1000") end
+  -- A derived class names the profile it is. The base amplifier itself has
+  -- none and falls back to the default.
+  if self:GetProfile() == "" then
+    self:ApplyAmpProfile(self.AmpProfileId or "cdi1000")
+  end
   if self:GetTempSink() == 0 then self:SetTempSink(22) end
   if self:GetTempDev() == 0 then self:SetTempDev(22) end
   -- Wire-fed mains take over as soon as anything drives the input; until then
@@ -58,12 +62,16 @@ end
 
 function ENT:SpawnFunction(ply, tr)
   if not tr.Hit then return end
-  local ent = ents.Create("ntx_amplifier")
+  -- self:GetClass(), not the class name written out. This function is
+  -- inherited by the derived Powersoft classes, and hardcoding the base here
+  -- would spawn a plain amplifier from the "Powersoft K10" button - the
+  -- button would look right and the entity would be the wrong thing.
+  local ent = ents.Create(self:GetClass())
   ent:SetPos(tr.HitPos + tr.HitNormal * 8)
   ent:Spawn()
   ent:Activate()
   if CPPI then ent:CPPISetOwner(ply) end
-  undo.Create("NTx Amplifier")
+  undo.Create("NTx " .. tostring(self.PrintName or "Amplifier"))
   undo.AddEntity(ent)
   undo.SetPlayer(ply)
   undo.Finish()

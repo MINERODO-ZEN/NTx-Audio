@@ -670,6 +670,15 @@ end)
 -- Three attempts at fixing the MID/SUB dropdown have failed, and "it looks
 -- wrong in the panel" cannot distinguish a UI problem from a message that never
 -- arrived or a write that was rejected. This prints the truth.
+concommand.Add("ntx_amp_list", function()
+  print("[NTx] amplifier profiles:")
+  for _, id in ipairs(NTx.AmpProfileIds()) do
+    local p = NTx.AmpProfile(id)
+    print(string.format("  %-8s %-28s %s%s", id, p.name, p.model or "?",
+      p.body ~= nil and ("  body=" .. tostring(p.body)) or ""))
+  end
+end)
+
 concommand.Add("ntx_amp_bus", function(_, _, args)
   local ent = Entity(tonumber(args[1] or 0) or 0)
   if not IsValid(ent) or ent:GetClass() ~= "ntx_amplifier" then
