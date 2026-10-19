@@ -206,6 +206,7 @@ local function registerPackClasses()
         AdminOnly = false,
         Editable = true,
         AmpProfileId = id,
+        AmpClassName = class,
       }
       scripted_ents.Register(ENT, class)
     end

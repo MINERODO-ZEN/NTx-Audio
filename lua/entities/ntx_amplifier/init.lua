@@ -62,11 +62,11 @@ end
 
 function ENT:SpawnFunction(ply, tr)
   if not tr.Hit then return end
-  -- self:GetClass(), not the class name written out. This function is
-  -- inherited by the derived Powersoft classes, and hardcoding the base here
-  -- would spawn a plain amplifier from the "Powersoft K10" button - the
-  -- button would look right and the entity would be the wrong thing.
-  local ent = ents.Create(self:GetClass())
+  -- GMod calls this as ENT.SpawnFunction, so self is the CLASS TABLE, not an
+  -- entity - self:GetClass() does not exist here. The class states its own
+  -- name instead, and the derived classes override it, which is what stops
+  -- the "Powersoft K10" button spawning a plain amplifier.
+  local ent = ents.Create(self.AmpClassName or "ntx_amplifier")
   ent:SetPos(tr.HitPos + tr.HitNormal * 8)
   ent:Spawn()
   ent:Activate()

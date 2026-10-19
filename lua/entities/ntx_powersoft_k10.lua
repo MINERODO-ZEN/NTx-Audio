@@ -22,6 +22,7 @@ ENT.Editable = true
 -- Applied by the base's Initialize, which falls back to the default profile
 -- when this is absent. The body group comes with it: one chassis, five model
 -- numbers, and the body is what tells them apart.
+ENT.AmpClassName = "ntx_powersoft_k10"
 ENT.AmpProfileId = "k10"
 
 DEFINE_BASECLASS( "ntx_amplifier" )
