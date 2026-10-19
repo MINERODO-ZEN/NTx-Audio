@@ -137,11 +137,12 @@ end
 -- Registering on the server and the client independently is deliberate. The
 -- class name is the same in both, and the profile travels as a string, so
 -- nothing has to be sent over the wire for the client to draw the right face.
+-- A fallback. The variants are normally registered at the end of the base
+-- amplifier's own file, because the spawn menu takes its list of entity
+-- classes once and anything registered later is not in it. This runs in case
+-- that did not happen, and registers nothing if it did.
 hook.Add("InitPostEntity", "NTx.AmpVariants", function()
-  local n = NTx.RegisterAmpVariants()
-  if n > 0 then
-    print(string.format("[NTx] %d amplifier variant(s) registered.", n))
-  end
+  NTx.RegisterAmpVariants()
 end)
 
 -- What the loader found. A pack that does not appear here is a pack that did

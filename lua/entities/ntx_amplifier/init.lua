@@ -180,3 +180,12 @@ function ENT:PostEntityPaste(ply, ent, created)
   if NTx.Amplifiers then NTx.Amplifiers[self] = true end
   if NTx.BroadcastGraph then NTx.BroadcastGraph() end
 end
+
+-- The variant classes, registered HERE and not at InitPostEntity.
+--
+-- The spawn menu takes its list of entity classes once, and InitPostEntity is
+-- after that: registering there produced classes the menu never saw, and the
+-- Powersoft tab simply was not there. This is the end of the base's own file,
+-- so the copy taken of it is complete - which is the whole reason the
+-- variants are copies and not derivations.
+if NTx.RegisterAmpVariants then NTx.RegisterAmpVariants() end

@@ -19,3 +19,8 @@ function ENT:Initialize()
     if IsValid(self) then self:CreateWirePorts() end
   end)
 end
+
+-- The variant classes, on the client as well as the server: the client needs
+-- the class registered to draw the model, the lamps and the panel. At the end
+-- of this file, so the copy of the base's table is complete.
+if NTx.RegisterAmpVariants then NTx.RegisterAmpVariants() end

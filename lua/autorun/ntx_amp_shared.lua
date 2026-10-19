@@ -351,6 +351,12 @@ function NTx.RegisterAmpVariants()
       }) then n = n + 1 end
     end
   end
+  -- Printed here rather than by the caller, because the callers run at more
+  -- than one point and a second run registers nothing - so a caller that
+  -- printed its own count would say "0" after the real one.
+  if n > 0 then
+    print(string.format("[NTx] %d amplifier variant(s) registered.", n))
+  end
   return n
 end
 
