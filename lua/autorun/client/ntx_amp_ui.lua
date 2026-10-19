@@ -682,8 +682,11 @@ concommand.Add("ntx_amp_bus", function(_, _, args)
   end
 end)
 
-util.AddNetworkString("NTx.ChainReq")
-util.AddNetworkString("NTx.ChainRep")
+-- No util.AddNetworkString here: it is server-only, and calling it from a client
+-- file raises "attempt to call field 'AddNetworkString' (a nil value)", which
+-- aborts the rest of THIS file - silently taking ntx_chain with it. The server
+-- half in ntx_amp_rms.lua declares both strings, which is the only place they
+-- need declaring.
 
 -- Prints the server's view of the whole level path, plus the two things only
 -- this client knows: whether the page is running, and what arrived in the graph.

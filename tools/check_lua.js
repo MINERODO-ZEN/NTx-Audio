@@ -61,12 +61,45 @@ const GLUA_BANNED = [
   [/(^|[^%w])[^%w=~][01]\s*\/\/[^\/]/, "C-style comment (use --)"],
 ];
 
+// Server-only globals. Calling one from a file under lua/autorun/client/ is a
+// nil error at load time that aborts the REST OF THAT FILE, so a console
+// command defined after the call silently never registers and looks like a
+// command that does not exist. Worth catching statically.
+//
+// ents.FindByClass is deliberately absent: it does exist client-side.
+// AddCSLuaFile is absent because it is guarded by convention, not by rule.
+const SERVER_ONLY = [
+  "util.AddNetworkString",
+  "util.AddNetworkableType",
+  "CreateConVar",
+  "player.GetHumans",
+  "game.SinglePlayer",
+];
+
+// Blanks comments and strings instead of deleting them, so offsets still line
+// up with src and the reported line number is the real one.
+const blank = (m) => " ".repeat(m.length);
+
 function lint(name, src) {
   for (const [re, why] of GLUA_BANNED) {
     const m = src.match(re);
     if (m) {
       const line = src.slice(0, m.index).split("\n").length;
       return `${name}:${line} GLua does not support ${why}`;
+    }
+  }
+  if (name.replace(/\\/g, "/").includes("/lua/autorun/client/")) {
+    const code = src
+      .replace(/--\[\[[\s\S]*?\]\]/g, blank)
+      .replace(/--[^\n]*/g, blank)
+      .replace(/"(\\.|[^"\\])*"/g, blank)
+      .replace(/'(\\.|[^'\\])*'/g, blank);
+    for (const fn of SERVER_ONLY) {
+      const m = code.match(new RegExp("(?<![\\w.])" + fn.replace(/\./g, "\\.") + "\\s*\\("));
+      if (m) {
+        const line = src.slice(0, m.index).split("\n").length;
+        return name + ":" + line + " " + fn + " is server-only and would abort this client file";
+      }
     }
   }
   return null;
