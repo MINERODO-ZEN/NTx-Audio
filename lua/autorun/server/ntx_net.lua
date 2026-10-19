@@ -80,7 +80,7 @@ function NTx.CollectGraph()
       local chs = {}
       for _, ch in ipairs(mixer.Channels or {}) do
         if IsValid(ch.Input) then
-          chs[#chs + 1] = { input = ch.Input, fader = ch.Fader, muted = ch.Muted, label = ch.Label }
+          chs[#chs + 1] = { input = ch.Input, fader = ch.Fader, muted = ch.Muted, label = ch.Label, bus = ch.Bus }
         end
       end
       g.mixers[#g.mixers + 1] = {

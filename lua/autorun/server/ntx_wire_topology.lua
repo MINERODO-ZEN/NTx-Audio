@@ -411,4 +411,19 @@ timer.Create("NTx.WireTopoSweep", 1, 0, function()
       if ch and cur ~= amp then return touch() end
     end
   end
+  -- Same invariant for the mixer's channel list: a wired source with no
+  -- channel is silence on every bus, and nothing else would ever notice it.
+  -- Checking here also means a rig that was wired before this list was derived
+  -- from the wires repairs itself on the next sweep, instead of the player
+  -- having to unlink and relink something to trigger it.
+  for _, mx in pairs(NTx.Mixers or {}) do
+    if IsValid(mx) then
+      local have = {}
+      for _, ch in ipairs(mx.Channels or {}) do have[ch.Input] = true end
+      for i = 1, (NTx.WIRE_MAX_MIX_CH or 16) do
+        local src = NTx.WireUpstream(mx, "In" .. i)
+        if IsValid(src) and not have[src] then return touch() end
+      end
+    end
+  end
 end)
