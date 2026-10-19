@@ -39,10 +39,21 @@ local PACK_LAMPS_FILE = "ntx_pack_lamps.json"
 -- garrysmod/addons/. The other two are for packs dropped in by hand.
 local function packRoots()
   local roots = {}
-  local addons = file.Find("addons/*/", "GAME")
-  for _, a in ipairs(addons) do roots[#roots + 1] = "addons/" .. a end
-  for _, p in ipairs(file.Find("ntx_packs/*/", "GAME")) do roots[#roots + 1] = "ntx_packs/" .. p end
-  for _, p in ipairs(file.Find("packs/*/", "THIRDPARTY")) do roots[#roots + 1] = "THIRDPARTY/packs/" .. p end
+  -- file.IsDir rather than a trailing slash on the pattern: whether a
+  -- trailing slash restricts a find to directories is not something worth
+  -- relying on, and a stray file named like an addon would be a broken root.
+  local function addSub(base, path)
+    for _, name in ipairs(file.Find(path, "GAME")) do
+      if file.IsDir(base .. name, "GAME") then roots[#roots + 1] = base .. name end
+    end
+  end
+  addSub("addons/", "addons/*")
+  addSub("ntx_packs/", "ntx_packs/*")
+  for _, name in ipairs(file.Find("packs/*", "THIRDPARTY")) do
+    if file.IsDir("THIRDPARTY/packs/" .. name, "THIRDPARTY") then
+      roots[#roots + 1] = "THIRDPARTY/packs/" .. name
+    end
+  end
   return roots
 end
 

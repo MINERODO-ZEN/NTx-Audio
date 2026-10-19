@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "category": "Example Packs",
+  "workshop": "",
+  "profiles": {
+    "example_xyz": {
+      "name": "Example XYZ 1200",
+      "print_name": "Example XYZ 1200",
+      "model": "models/example/xyz.mdl",
+      "body": 0,
+      "channels": 2,
+      "class": "D",
+      "modeLabel": "D (switch-mode supply)",
+      "power": [[2, 2400], [4, 1200], [8, 600], [16, 300]],
+      "ratedLoad": 8,
+      "minLoad": 4,
+      "ilim": 40,
+      "sens": 1.4,
+      "sensOptions": [1.4, 1.0, 0.775],
+      "psu": { "ratio": 0.85, "droop": 0.02, "swing": 0.95, "dropV": 4 },
+      "standbySwing": 0.4,
+      "mainsWin": 0.1,
+      "mainsSwallow": 0.25,
+      "pfFull": 0.95,
+      "pfIdle": 0.3,
+      "eta": 0.85,
+      "idleW": 60,
+      "fan": { "free": 0.1, "blocked": 0.35, "onT": 45, "fullT": 70, "rpm": 3000 },
+      "thermal": {
+        "kdev": 0.03, "twarn": 85, "tderate": 100,
+        "tprotect": 115, "tdestroy": 135, "tsink": 80
+      },
+      "tau": { "dev": 6, "sink": 300, "fan": 5 },
+      "limiters": ["tlc"],
+      "modes": ["dual", "bridge"],
+      "zmin": { "dual": 4, "bridge": 8 },
+      "ratedW": { "dual": 600, "bridge": 1200 },
+      "clipHold": 0.35,
+      "crestDb": 6,
+      "robust": 1.2,
+      "snrDb": 105,
+      "thdPct": 0.5,
+      "hiz": false,
+      "stock": { "pfc": true, "fanNoise": true, "autoStandby": false, "meters": 2 },
+      "locked": ["channels", "ratedw", "ratedz", "minz", "sens", "ilime"],
+      "note": "Reference pack. Copy this folder, change the model, the specs and the lamps."
+    }
+  }
+}
