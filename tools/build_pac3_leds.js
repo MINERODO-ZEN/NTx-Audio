@@ -40,17 +40,31 @@ const lit = (v) =>
   v && v.arguments ? v.arguments.map((a) => parseFloat(a.raw || a.argument.raw)) : null;
 const str = (v) => (v && v.raw ? String(v.raw).replace(/^["']|["']$/g, '') : null);
 
-// "signal12" -> "signal", 12.  "power" -> "power", null
+// Lamp names come in two spellings. The original packs the channel onto the
+// kind: "signal2" is channel 2. The Powersoft K spells it out, "green3_ch2",
+// because its greens are a five-segment ladder rather than one lamp - the
+// trailing digit is the ladder STEP and _chN is the channel.
 function splitName(name) {
-  const m = /^([a-z]+)([0-9]*)$/.exec(String(name || '').toLowerCase());
+  const s = String(name || '').toLowerCase();
+  const tall = /^([a-z]+)([0-9]*)_ch([0-9]+)$/.exec(s);
+  if (tall) {
+    return { kind: tall[1], ch: parseInt(tall[3], 10), step: tall[2] === '' ? null : parseInt(tall[2], 10) };
+  }
+  const m = /^([a-z]+)([0-9]*)$/.exec(s);
   if (!m) return null;
-  return { kind: m[1], ch: m[2] === '' ? null : parseInt(m[2], 10) };
+  return { kind: m[1], ch: m[2] === '' ? null : parseInt(m[2], 10), step: null };
 }
 
 // Kinds the runtime knows how to drive. A name outside this set is reported
 // rather than baked, so a typo shows up at build time instead of as a lamp
 // that silently stays dark in game.
-const KINDS = new Set(['power', 'fault', 'signal', 'odep', 'clip', 'protect', 'temp']);
+const KINDS = new Set(['power', 'fault', 'signal', 'odep', 'clip', 'protect', 'temp', 'meter']);
+
+// Powersoft K Series: "7 meter LEDs: 5 x green, 1 x yellow, 1 x red, top
+// yellow and red show alarm with protect description on LCD panel" - so the
+// greens are a level ladder and the top two are alarms, not level. Yellow
+// below red, which makes yellow the onset of protection and red the fault.
+const ALIAS = { green: 'meter', yellow: 'protect', red: 'fault' };
 
 function parseFile(file) {
   const raw = fs.readFileSync(file, 'utf8');
@@ -76,11 +90,15 @@ function parseFile(file) {
       if (str(f.ClassName) === 'model2' && str(f.Model) === 'models/led.mdl') {
         const s = splitName(str(f.Name));
         if (s) {
-          if (!KINDS.has(s.kind)) {
+          const kind = ALIAS[s.kind] || s.kind;
+          if (!KINDS.has(kind)) {
             console.warn(`  ! ${path.basename(file)}: unknown lamp name "${str(f.Name)}" - skipped`);
+          } else if (kind === 'meter' && (s.step === null || s.step > 4)) {
+            console.warn(`  ! ${path.basename(file)}: ladder lamp "${str(f.Name)}" needs a step of 0-4 - skipped`);
           } else {
             lamps.push({
-              kind: s.kind,
+              kind: kind,
+              step: s.step,
               ch: s.ch,
               pos: lit(f.Position) || [0, 0, 0],
               ang: lit(f.Angles) || [0, 0, 0],
@@ -144,7 +162,7 @@ for (const f of files) {
   const rows = lamps
     .map(
       (l) =>
-        `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ` +
+        `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ${l.step === null || l.step === undefined ? 0 : l.step}, ` +
         `${num(l.pos[0])}, ${num(l.pos[1])}, ${num(l.pos[2])}, ` +
         `${num(l.ang[0])}, ${num(l.ang[1])}, ${num(l.ang[2])}, ` +
         `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)} },`
@@ -168,7 +186,7 @@ function emitTable(t) {
     const rows = t[k]
       .map(
         (l) =>
-          `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ` +
+          `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ${l.step === null || l.step === undefined ? 0 : l.step}, ` +
           `${num(l.pos[0])}, ${num(l.pos[1])}, ${num(l.pos[2])}, ` +
           `${num(l.ang[0])}, ${num(l.ang[1])}, ${num(l.ang[2])}, ` +
           `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)} },`

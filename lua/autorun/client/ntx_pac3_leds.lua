@@ -84,6 +84,19 @@ end
 
 -- "protect" lights when the channel is protecting OR the output device is hot,
 -- which is how the CDi-style lamp behaves.
+-- Powersoft K Series meter: five greens stacked bottom to top, lighting as a
+-- bargraph off the same duty the single signal lamp uses (a linear ramp from
+-- -40 dBu to 0). Spacing the thresholds unevenly puts more segments near the
+-- top, which is where a listener watching the amp wants the resolution.
+local METER_STEPS = { 0.06, 0.22, 0.42, 0.64, 0.86 }
+KINDS.meter = function(ent, ch, rec, step)
+  local s = NTx.AmpLedState(ent, chOf(ch))
+  if not s then return 0 end
+  if s.hot then return 255 end
+  local i = math.Clamp(math.floor(tonumber(step) or 0), 0, 4) + 1
+  return ((tonumber(s.duty) or 0) >= METER_STEPS[i]) and 255 or 0
+end
+
 KINDS.protect = function(ent, ch, rec)
   local rc = rec and rec.ch and rec.ch[chOf(ch)]
   if ent:GetTempDev() >= 80 or (rc and rc.protect) then return 255 end
@@ -99,15 +112,16 @@ end
 local cache = {}
 
 -- Row layout matches the generated file:
---   kind, ch, px, py, pz, ap, ay, ar, lr, lg, lb
+--   kind, ch, step, px, py, pz, ap, ay, ar, lr, lg, lb
 local function decode(row)
-  local kind, ch = row[1], row[2]
+  local kind, ch, step = row[1], row[2], row[3]
   return {
     kind = kind,
     ch = tonumber(ch) or nil,
-    pos = Vector(row[3], row[4], row[5]),
-    ang = Angle(row[6], row[7], row[8]),
-    lens = Color(row[9] or 0, row[10] or 0, row[11] or 0),
+    step = tonumber(step) or nil,
+    pos = Vector(row[4], row[5], row[6]),
+    ang = Angle(row[7], row[8], row[9]),
+    lens = Color(row[10] or 0, row[11] or 0, row[12] or 0),
   }
 end
 
@@ -156,7 +170,7 @@ function NTx.Pac3LampState(ent, lamp, rec)
   if not ent:RunState() then return 0 end
   local fn = KINDS[lamp.kind]
   if not fn then return 0 end
-  local ok, alpha = pcall(fn, ent, lamp.ch, rec)
+  local ok, alpha = pcall(fn, ent, lamp.ch, rec, lamp.step)
   if not ok then return 0 end
   return alpha or 0
 end
@@ -198,8 +212,8 @@ concommand.Add("ntx_leds_debug", function(_, _, args)
   end
   for i, lamp in ipairs(lamps) do
     local world = target:LocalToWorld(lamp.pos)
-    print(string.format("    [%d] %-8s ch%s pos=%s ang=%s lens=%s world=%s",
-      i, tostring(lamp.kind), tostring(lamp.ch), tostring(lamp.pos), tostring(lamp.ang),
+    print(string.format("    [%d] %-8s ch%s step%s pos=%s ang=%s lens=%s world=%s",
+      i, tostring(lamp.kind), tostring(lamp.ch), tostring(lamp.step or 0), tostring(lamp.pos), tostring(lamp.ang),
       tostring(lamp.lens), tostring(world)))
   end
 end)
