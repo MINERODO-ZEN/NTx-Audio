@@ -73,6 +73,8 @@ local cvLimiterDb = CreateClientConVar("ntx_limiter_db", "-0.5", true, false,
   "Limiter threshold in dBFS (only bites above this)")
 -- Motion smoothing: positions are interpolated in-page every frame, so the
 -- push rate is just a target refresh, not the smoothness.
+NTx.TapSide = NTx.TapSide or {}
+
 local cvPushHz = CreateClientConVar("ntx_push_hz", "15", true, false,
   "State push rate to WebAudio pages (Hz); in-page interpolation smooths motion regardless")
 local cvMotionSmooth = CreateClientConVar("ntx_motion_smooth", "60", true, false,
@@ -183,6 +185,18 @@ local function buildTaps(input, mrec, listenerPos)
           busId = ampEnt:ChannelBusId(ch)
           playSub = NTx.BusIsSub(busId)
         end
+        -- Recorded so ntx_audio_status can say WHICH of the four conditions
+        -- above failed. A cabinet on a channel with no bus takes the whole
+        -- source, which is exactly the "full stereo from one cabinet" symptom,
+        -- and the tap payload alone cannot tell you whether side was never
+        -- computed or merely dropped downstream.
+        NTx.TapSide[(s.ent:EntIndex())] = string.format(
+          "ch=%d fed=%s bus=%s side=%s", ch,
+          tostring(ampEnt.ChannelIsFed and ampEnt:ChannelIsFed(ch)),
+          tostring(busId), tostring(busId ~= nil and NTx.BusSideOf(busId) or nil))
+      else
+        NTx.TapSide[(s.ent:EntIndex())] = string.format(
+          "no amp ch=0 bus=nil side=nil%s", s.ent:GetActive() and " (active)" or "")
       end
       -- Everything downstream (bus fader, tap kind, directivity branch) reads
       -- playSub rather than the cabinet's type.
@@ -569,6 +583,8 @@ hook.Add("Think", "NTx.WebAudioThink", function()
   end
   local maxPages = math.Clamp(cvMaxPages:GetInt() or 4, 1, 8)
   local seen, count, pending = {}, 0, {}
+  -- Rebuilt each pass, so a cabinet that was removed stops being reported.
+  NTx.TapSide = {}
   local ply = LocalPlayer()
   if not IsValid(ply) then return end
   local ep, ea = ply:EyePos(), ply:EyeAngles()

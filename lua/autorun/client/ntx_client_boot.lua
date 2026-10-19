@@ -38,6 +38,18 @@ concommand.Add("ntx_audio_status", function()
     .. " verdict=" .. tostring(NTx.WebAudioVerdict or "pending")
     .. " fallback=" .. tostring(NTx.FallbackAllowed and NTx.FallbackAllowed() or "?")
     .. " pageRunning=" .. tostring(NTx.WebAudioRunning))
+  -- Per-cabinet bus resolution. The symptom of a tap with no bus is a cabinet
+  -- playing the whole stereo programme, which looks like a page bug and is
+  -- usually not one - so the four conditions that decide it are printed here.
+  local ts = NTx.TapSide or {}
+  local ids = {}
+  for k in pairs(ts) do ids[#ids + 1] = k end
+  table.sort(ids)
+  print("[NTx] tap bus resolution:")
+  for _, k in ipairs(ids) do
+    print(string.format("    speaker %s: %s", k, ts[k]))
+  end
+  if #ids == 0 then print("    (none)") end
   local g = NTx.Graph or {}
   print(string.format("[NTx] graph: %d inputs %d speakers %d buses %d mixers",
     #(g.inputs or {}), #(g.speakers or {}), #(g.fallbacks or {}), #(g.mixers or {})))
