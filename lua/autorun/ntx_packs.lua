@@ -57,49 +57,6 @@ local function packRoots()
   return roots
 end
 
--- What a pack profile must state, and what it may leave out.
---
--- The required list is the physical truth of the amplifier: without a thermal
--- block the simulation indexes nil on the first tick, and a pack that is
--- accepted and then crashes the rig is worse than one that is refused. The
--- optional list has defaults that are safe for any amplifier.
-local PACK_REQUIRED = {
-  "name", "model", "channels", "class", "power", "ratedLoad", "minLoad",
-  "ilim", "sens", "psu", "mainsWin", "mainsSwallow", "pfFull", "pfIdle",
-  "eta", "idleW", "fan", "thermal", "tau", "modes", "zmin", "ratedW", "stock",
-}
-
-local PACK_DEFAULTS = {
-  standbySwing = 0.4,
-  clipHold = 0.1,
-  crestDb = 6,
-  robust = 1,
-  snrDb = 100,
-  thdPct = 0.5,
-  hiz = false,
-  limiters = {},
-  modeLabel = "",
-  sensOptions = nil,
-  box = nil,
-  locked = {},
-}
-
-local function validateProfile(id, prof)
-  local missing = {}
-  for _, k in ipairs(PACK_REQUIRED) do
-    if prof[k] == nil then missing[#missing + 1] = k end
-  end
-  if #missing > 0 then
-    print(string.format("[NTx] pack profile '%s' is missing %s - skipped.",
-      id, table.concat(missing, ", ")))
-    return false
-  end
-  for k, v in pairs(PACK_DEFAULTS) do
-    if prof[k] == nil and v ~= nil then prof[k] = v end
-  end
-  return true
-end
-
 local function readJSON(path)
   local raw = file.Read(path, "GAME")
   if not raw or raw == "" then return nil end
@@ -144,7 +101,7 @@ function NTx.LoadPacks()
           if type(prof.box) == "table" and not isvector(prof.box) then
             prof.box = Vector(prof.box[1] or 0, prof.box[2] or 0, prof.box[3] or 0)
           end
-          if not validateProfile(id, prof) then
+          if not NTx.CheckAmpProfile(id, prof) then
             -- Refused, with the reason. A pack that half-loads is the worst
             -- outcome: the amp appears and then behaves like a different
             -- machine, or indexes nil on the first simulation tick.

@@ -157,7 +157,6 @@ local K_SERIES = {
   -- series, so the minimum is a datasheet fact rather than a caution.
   minLoad = 2,
   sensOptions = { 26, 29, 32, 35 },
-  psuRatio = { k2 = 140, k3 = 165, k6 = 153, k10 = 200, k20 = 225 },
   psuSwing = 0.98,
   psuDroop = 0.02,
   psuDropV = 4,
@@ -197,39 +196,33 @@ local K_SERIES = {
 }
 
 for _, spec in ipairs({
-  { id = "k2",  body = 1, w = 2400, w4 = 1950, w8 = 1000, bw4 = 4800, bw8 = 3900,
+  { id = "k2", vpeak = 140,  body = 1, w = 2400, w4 = 1950, w8 = 1000, bw4 = 4800, bw8 = 3900,
     sens = { 4.48, 3.17, 2.47, 1.59 }, idleW = 75, idleA = 1.3, apeak = 102, mass = 8, depth = 15,
     eta = 0.82, kdev = 0.021 },
-  { id = "k3",  body = 2, w = 2800, w4 = 2600, w8 = 1400, bw4 = 5600, bw8 = 5200,
+  { id = "k3", vpeak = 165,  body = 2, w = 2800, w4 = 2600, w8 = 1400, bw4 = 5600, bw8 = 5200,
     sens = { 5.30, 3.75, 2.66, 1.88 }, idleW = 75, idleA = 1.3, apeak = 102, mass = 8, depth = 15,
     eta = 0.82, kdev = 0.021 },
-  { id = "k6",  body = 3, w = 3600, w4 = 2500, w8 = 1300, bw4 = 7200, bw8 = 5000,
+  { id = "k6", vpeak = 153,  body = 3, w = 3600, w4 = 2500, w8 = 1300, bw4 = 7200, bw8 = 5000,
     sens = { 5.11, 3.62, 2.56, 1.81 }, idleW = 84, idleA = 1.03, apeak = 125, mass = 12, depth = 18.7,
     eta = 0.84, kdev = 0.030 },
-  { id = "k10", body = 4, w = 6000, w4 = 4000, w8 = 2000, bw4 = 12000, bw8 = 8000,
+  { id = "k10", vpeak = 200, body = 4, w = 6000, w4 = 4000, w8 = 2000, bw4 = 12000, bw8 = 8000,
     sens = { 6.34, 4.49, 3.18, 2.25 }, idleW = 84, idleA = 1.03, apeak = 125, mass = 12, depth = 18.7,
     eta = 0.85, kdev = 0.033 },
-  { id = "k20", body = 5, w = 9000, w4 = 5200, w8 = 2700, bw4 = 18000, bw8 = 10400,
+  { id = "k20", vpeak = 225, body = 5, w = 9000, w4 = 5200, w8 = 2700, bw4 = 18000, bw8 = 10400,
     sens = { 7.37, 5.22, 3.68, 2.62 }, idleW = 88, idleA = 1.17, apeak = 125, mass = 12, depth = 18.7,
     eta = 0.86, kdev = 0.034 },
 }) do
   local K = K_SERIES
-  NTx.AmpProfiles[spec.id] = {
+  local prof = {
     id = spec.id,
     name = "Powersoft K" .. spec.id:upper(),
-    model = K.model,
     body = spec.body,
     box = Vector(19, spec.depth, 1.75),
     mass = spec.mass,
-    channels = K.channels,
-    class = K.class,
-    modeLabel = K.modeLabel,
     -- EIAJ, 1 kHz, 1% THD. Real bridged power here runs close to the sum of
     -- the pair rather than the published doubling, which is what the sheet
     -- reports (K10: 6000 into 2 ohm per channel, 12000 bridged at 4 ohm).
     power = { { 2, spec.w }, { 4, spec.w4 }, { 8, spec.w8 }, { 16, math.floor(spec.w8 / 2) } },
-    ratedLoad = K.ratedLoad,
-    minLoad = K.minLoad,
     -- Current limit straight off the sheet: the published peak output current,
     -- as RMS. AmpChannelCeiling multiplies this by the load to get a voltage
     -- ceiling, so it has to be an ampere figure and not a peak one.
@@ -241,44 +234,64 @@ for _, spec in ipairs({
     sens = spec.sens[3],
     sensOptions = spec.sens,
     psu = {
-      ratio = K.psuRatio[spec.id] / 230,
+      ratio = spec.vpeak / 230,
       droop = K.psuDroop,
       swing = K.psuSwing,
       dropV = K.psuDropV,
     },
-    standbySwing = K.standbySwing,
-    mainsWin = K.mainsWin,
-    mainsSwallow = K.mainsSwallow,
-    pfFull = K.pfFull,
     -- Idle power factor off the consumption table: idle watts over idle
     -- volts-times-amps. Switch-mode supplies pull badly at light load and
     -- AmpsPf interpolates from here up to pfFull.
     pfIdle = math.Round(spec.idleW / (230 * spec.idleA), 3),
     eta = spec.eta,
     idleW = spec.idleW,
-    fan = K.fan,
     -- kdev is DERIVED from the published dissipation, not published itself:
     -- losses at a quarter of rated power against a sink 45 C above ambient.
     thermal = { kdev = spec.kdev, twarn = 85, tderate = 100, tprotect = 115,
                 tdestroy = 135, tsink = 80 },
-    tau = K.tau,
-    limiters = K.limiters,
-    modes = K.modes,
-    zmin = K.zmin,
     ratedW = { dual = spec.w8, bridge = spec.bw8 },
-    clipHold = K.clipHold,
-    crestDb = K.crestDb,
-    robust = K.robust,
-    snrDb = K.snrDb,
-    thdPct = K.thdPct,
-    hiz = K.hiz,
-    stock = K.stock,
     note = "Powersoft K" .. spec.id:upper() .. ": universal 100-240 V +/-10% regulated switch mode with PFC, so output power is flat across the mains range and only the current draw moves (K10 draws 2500 W at both 230 V and 115 V, 11.3 A against 22.6 A). 7 front-panel LEDs per channel: 5 x green meter, then yellow and red for alarms. Peak limiter plus TruePower RMS voltage/current limiting. Thermal numbers are derived from the published dissipation, not published.",
   }
+  -- Everything shared comes from the template. Merged rather than copied
+  -- field by field: an explicit list drops anything added to the template
+  -- later, and that is not a mistake to make twice. The fields above are set
+  -- first, so they win.
+  for k, v in pairs(K) do
+    if prof[k] == nil then prof[k] = v end
+  end
+  NTx.AmpProfiles[spec.id] = prof
+  NTx.CheckAmpProfile(spec.id, prof)
 end
 
 function NTx.AmpProfile(id)
   return NTx.AmpProfiles[tostring(id or "")] or nil
+end
+
+-- The fields the simulation and the panels read off a profile. A profile
+-- missing one is a crash waiting for the first tick, and the check is here
+-- because a profile is assembled from a shared template and a per-model
+-- literal: naming every field in one place is how two of them got dropped
+-- already, silently, and the symptom each time was something else entirely.
+NTx.AMP_PROFILE_FIELDS = {
+  "id", "name", "model", "body", "channels", "class", "power", "ratedLoad",
+  "minLoad", "ilim", "sens", "psu", "standbySwing", "mainsWin",
+  "mainsSwallow", "pfFull", "pfIdle", "eta", "idleW", "fan", "thermal",
+  "tau", "modes", "zmin", "ratedW", "clipHold", "crestDb", "robust",
+  "snrDb", "thdPct", "hiz", "stock", "variant", "category",
+}
+
+-- Names what is missing rather than letting it fail later. Returns true when
+-- the profile is complete.
+function NTx.CheckAmpProfile(id, p)
+  if not p then return false end
+  local missing = {}
+  for _, k in ipairs(NTx.AMP_PROFILE_FIELDS) do
+    if p[k] == nil then missing[#missing + 1] = k end
+  end
+  if #missing == 0 then return true end
+  print(string.format("[NTx] amplifier profile '%s' is missing %s", id,
+    table.concat(missing, ", ")))
+  return false
 end
 
 -- Register a spawnable entity class for one amplifier profile.
