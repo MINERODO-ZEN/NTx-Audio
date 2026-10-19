@@ -582,6 +582,14 @@ function NTx.WebAudioOnStatus(pkey, json)
     -- makes the amplifier meters move with the music instead of sitting on the
     -- mixer faders. A page that never reports it just leaves the meters on the
     -- server's commanded estimate.
+    -- How often the page's measurements arrive, measured.
+    local now = CurTime()
+    NTx.PageRmsCount = (NTx.PageRmsCount or 0) + 1
+    if not NTx.PageRmsAt or (now - NTx.PageRmsAt) >= 1 then
+      NTx.PageRmsRate = (NTx.PageRmsCount - (NTx.PageRmsBase or 0)) / math.max(now - (NTx.PageRmsAt or (now - 1)), 0.001)
+      NTx.PageRmsAt = now
+      NTx.PageRmsBase = NTx.PageRmsCount
+    end
     NTx.PageRms[pkey] = {
       v = math.Clamp(tonumber(r.v) or 0, 0, 4),
       -- One level per bus, each already band-limited in the page. This is the

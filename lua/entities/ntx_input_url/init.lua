@@ -66,6 +66,18 @@ function ENT:Think()
   -- `self.WireOut = lvl` here - lvl is scoped to the loop body, so reading it
   -- out here would assign a global nil and defeat the sentinel entirely.
   if changed then
+    -- Measured: the entity THINKS fast, but what reaches the wire is the
+    -- rate the measured level actually changes at. If that is slow, the
+    -- measurement is arriving slow, and this says so.
+    local n = (self.PublishCount or 0) + 1
+    self.PublishCount = n
+    local now = CurTime()
+    if not self.PublishAt or (now - self.PublishAt) >= 1 then
+      self.PublishRate = (now - (self.PublishAt or now - 1)) > 0
+        and (n - (self.PublishBase or 0)) / (now - (self.PublishAt or (now - 1))) or 0
+      self.PublishAt = now
+      self.PublishBase = n
+    end
     -- A fresh table each time: Wiremod holds ARRAY values by reference, and
     -- mutating the one it already stores would not re-trigger the fan-out.
     local buses = {}

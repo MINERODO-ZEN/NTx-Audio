@@ -27,7 +27,7 @@ local function simHz()
   return math.Clamp(cv and cv:GetFloat() or 60, 1, 130)
 end
 
-CreateConVar("ntx_amp_sim_hz", "60", FCVAR_ARCHIVE + FCVAR_REPLICATED,
+CreateConVar("ntx_amp_sim_hz", "67", FCVAR_ARCHIVE + FCVAR_REPLICATED,
   "Simulation rate cap (Hz). The meters cannot move faster than this.")
 
 CreateConVar("ntx_amp_sim", "1", FCVAR_ARCHIVE + FCVAR_REPLICATED,

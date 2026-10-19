@@ -24,10 +24,13 @@ util.AddNetworkString("NTx.CvarSet")
 util.AddNetworkString("NTx.AmplifierEditAll")
 
 CreateConVar("ntx_max_channels", "16", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Max audible NTx live sources per client")
-CreateConVar("ntx_update_hz", "10", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Graph rebroadcast rate cap (Hz)")
+CreateConVar("ntx_update_hz", "67", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Graph rebroadcast rate cap (Hz)")
+-- The amplifier state sync carries everything that moves slowly: mains, rail,
+-- temperatures, damage, every speaker's state. The level comes on the fast
+-- meter path and the signal chain carries the input, so this stays slow.
 CreateConVar("ntx_amp_sync_hz", "10", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Amplifier state broadcast rate cap (Hz)")
-CreateConVar("ntx_meter_hz", "66", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Meter/level broadcast rate cap (Hz); separate from the slow state sync")
-CreateConVar("ntx_signal_hz", "60", FCVAR_ARCHIVE + FCVAR_REPLICATED,
+CreateConVar("ntx_meter_hz", "67", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Meter/level broadcast rate cap (Hz); separate from the slow state sync")
+CreateConVar("ntx_signal_hz", "67", FCVAR_ARCHIVE + FCVAR_REPLICATED,
   "Rate the signal chain runs at (Hz): a source publishes its measured level, the mixer republishes it, a cabinet passes it on")
 CreateConVar("ntx_amp_sync_dist", "6000", FCVAR_ARCHIVE + FCVAR_REPLICATED,
   "Radius in units around which amplifier state is still broadcast to a client (0 = everywhere)")

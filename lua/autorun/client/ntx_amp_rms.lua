@@ -72,6 +72,15 @@ local function report()
     end
   end
   if #items == 0 then return end
+  -- How often the client actually sends, measured: the cadence the server
+  -- assigned and the rate it achieves are not the same thing.
+  local now = CurTime()
+  NTx.RmsSendCount = (NTx.RmsSendCount or 0) + 1
+  if not NTx.RmsSendAt or (now - NTx.RmsSendAt) >= 1 then
+    NTx.RmsSendRate = (NTx.RmsSendCount - (NTx.RmsSendBase or 0)) / math.max(now - (NTx.RmsSendAt or (now - 1)), 0.001)
+    NTx.RmsSendAt = now
+    NTx.RmsSendBase = NTx.RmsSendCount
+  end
   net.Start("NTx.AmpRms")
   net.WriteUInt(RMS_PROTO, 8)
   net.WriteUInt(#items, 6)
