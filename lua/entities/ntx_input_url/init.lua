@@ -30,6 +30,12 @@ end
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
   local vol = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
+  -- A source with no URL cannot play, so it contributes NOTHING. The fallback
+  -- below is the fader position, which for a source that is not playing at all
+  -- is a phantom at full scale: the amplifier saw a clipping signal from a
+  -- player with nothing assigned, and the clip hold blinked the meters from
+  -- full to zero.
+  local silent = (tostring(self:GetStreamUrl() or "") == "")
   -- One level per BUS, straight from the page's band-limited measurement. The
   -- side split, the band split and the mono sum all happen there, because they
   -- are properties of the audio; redoing them here would only approximate what
@@ -46,7 +52,7 @@ function ENT:Think()
     -- a loud one. First run has nothing to hold, so it starts at the fader.
     -- shortcut: holds forever, so a source that stops reporting freezes at its
     -- last level instead of decaying. Upgrade path: age LastBus and fade.
-    local lvl = vol * (m or self.LastBus[i] or 1)
+    local lvl = silent and 0 or (vol * (m or self.LastBus[i] or 1))
     if self.WireBuses[i] ~= lvl then
       self.WireBuses[i] = lvl
       changed = true

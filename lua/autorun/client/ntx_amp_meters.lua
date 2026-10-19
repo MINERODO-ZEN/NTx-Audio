@@ -716,15 +716,20 @@ concommand.Add("ntx_leds_status", function()
       for ch = 1, 8 do
         local c = rec and rec.ch and rec.ch[ch]
         if c then
-          chans[#chans + 1] = string.format("%d:%d", ch, math.floor(tonumber(c.linDb) or -120))
+          -- The clip flag matters: a meter that blinks from full to zero is the
+          -- clip HOLD, and a single reading of the level never catches it.
+          local held = NTx.AmpLeds[ledKey(amp, ch)] or {}
+          chans[#chans + 1] = string.format("%d:%d%s%s", ch,
+            math.floor(tonumber(c.linDb) or -120),
+            (c.clip and " CLIP" or ""),
+            ((tonumber(held.holdUntil) or 0) > CurTime() and " HOLD" or ""))
         end
       end
       print(string.format("  amp %d profile=%q model=%s", amp:EntIndex(),
         tostring(amp:GetProfile()), tostring(amp:GetModel())))
-      print(string.format("     layout=%s lamps=%d leds=%d channels=[%s]",
+      print(string.format("     layout=%s lamps=%d channels=[%s]",
         (lamps and #lamps > 0) and "pac3" or "VIRTUAL PANEL",
         lamps and #lamps or 0,
-        #NTx.AmpLeds and 0 or 0,
         table.concat(chans, " ")))
     end
   end

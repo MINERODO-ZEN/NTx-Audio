@@ -122,10 +122,17 @@ local function busLevel(mixer, bus)
       if muted then return 0 end
       -- The input volume is applied linearly by the audio path, not tapered.
       g = g * NTx.FaderToGain(chFader) * (tonumber(inp:GetInputVolume()) or 1)
-      -- Faders say how much of a source reaches the bus; the measured RMS says
-      -- how much of it is actually playing. Without a recent report this stays
-      -- at full scale, which is what the fader-only estimate always assumed.
-      local lvl = NTx.MeasuredRms(inp) or 1
+      -- A source with no URL is not playing at all, so it contributes nothing.
+      -- The fader-only fallback below is the FADER position, and for a player
+      -- with nothing assigned that is a phantom at full scale.
+      local lvl = 0
+      if tostring(inp:GetStreamUrl() or "") ~= "" then
+        -- Faders say how much of a source reaches the bus; the measured RMS
+        -- says how much of it is actually playing. Without a recent report this
+        -- stays at full scale, which is what the fader-only estimate always
+        -- assumed.
+        lvl = NTx.MeasuredRms(inp) or 1
+      end
       local e = g * lvl
       energy = energy + e * e
     end
