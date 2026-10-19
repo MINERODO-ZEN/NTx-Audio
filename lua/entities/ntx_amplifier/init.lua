@@ -112,7 +112,7 @@ function ENT:PreEntityCopy()
     minz = self:GetMinLoad(), sens = self:GetSens(), trim = self:GetTrim(), ilime = self:GetIlime(),
     mode = self:GetMode(), hizv = self:GetHizVolt(), busmask = self:GetBusMask(), meters = self:GetMeters(),
     chanbus = self:GetChannelBuses(), chanfed = self:GetChannelFed(),
-    pfc = self:GetPFC(), hum = self:GetMainsHum(), humdb = self:GetHumDb(),
+    pfc = self:GetPFC(),
     fan = self:GetFanNoise(), fandb = self:GetFanNoiseDb(),
     standby = self:GetAutoStandby(), sbdelay = self:GetStandbyDelay(),
     cliphold = self:GetClipHold(), crest = self:GetCrestDb(), thbias = self:GetThermalBias(),
@@ -144,8 +144,6 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetChannelFed(math.Clamp(math.floor(tonumber(d.chanfed) or 0), 0, 255))
     self:SetMeters(math.Clamp(math.floor(tonumber(d.meters) or 0), 0, 2))
     self:SetPFC(d.pfc == true)
-    self:SetMainsHum(d.hum == true)
-    self:SetHumDb(math.Clamp(tonumber(d.humdb) or -120, -120, 0))
     self:SetFanNoise(d.fan == true)
     self:SetFanNoiseDb(math.Clamp(tonumber(d.fandb) or -120, -120, 0))
     self:SetAutoStandby(d.standby == true)

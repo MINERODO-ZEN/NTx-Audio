@@ -317,7 +317,6 @@ function NTx.BroadcastAmpSync()
     net.WriteFloat(math.Round(st.rail or 0, 1))
     net.WriteFloat(math.Round(st.totalW or 0, 1))
     wu(st.pf or 0, 1000)
-    wd(st.humDb or -120, 10)
     wd(st.fanDb or -120, 10)
     wd(red, 20)
     wu(amp:GetDamage() or 0, 1000)
@@ -542,7 +541,6 @@ local SIM_CVARS = {
   ntx_crest_db = { 0, 30 },
   ntx_mains_nominal = { 90, 260 },
   ntx_ambient_c = { -20, 60 },
-  ntx_mains_hz = { 50, 60 },
   ntx_amp_sync_hz = { 1, 30 },
   ntx_amp_sync_dist = { 0, 20000 },
 }

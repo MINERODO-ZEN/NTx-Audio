@@ -76,7 +76,6 @@ NTx.AmpProfiles = {
     eta = 0.65,
     idleW = 100,
     idleDf = 9,
-    humDb = -74,
     -- 2.4 kW of heat at full 4-ohm power: fine with the fan running in an open
     -- rack, thermal protect in a minute with it blocked. That sensitivity is
     -- the whole reason this amplifier has ODEP.
@@ -93,7 +92,7 @@ NTx.AmpProfiles = {
     snrDb = 105,
     thdPct = 0.05,
     hiz = false,
-    stock = { pfc = false, mainsHum = true, fanNoise = true, autoStandby = true, meters = 1 },
+    stock = { pfc = false, fanNoise = true, autoStandby = true, meters = 1 },
     note = "Country-tapped toroidal supply (+/-10% per tap). ODEP limits drive instead of tripping; IOC LED holds 0.5 s. Standby mode per manual 4.3.2.",
   },
   cdi1000 = {
@@ -122,7 +121,6 @@ NTx.AmpProfiles = {
     eta = 0.72,
     idleW = 38,
     idleDf = 12,
-    humDb = -120,
     fan = { free = 0.082, blocked = 0.31, onT = 48, fullT = 74, rpm = 3800 },
     thermal = { kdev = 0.04, twarn = 80, tderate = 100, tprotect = 115, tdestroy = 135, tsink = 88 },
     tau = { dev = 8, sink = 420, fan = 5 },
@@ -136,7 +134,7 @@ NTx.AmpProfiles = {
     snrDb = 100,
     thdPct = 0.5,
     hiz = true,
-    stock = { pfc = true, mainsHum = false, fanNoise = true, autoStandby = true, meters = 2 },
+    stock = { pfc = true, fanNoise = true, autoStandby = true, meters = 2 },
     note = "Crown publishes no power factor for the switch-mode supply, so PFC is a modelling assumption (toggle it off for non-PFC rail sag). TLC auto-ramps output as it heats; TEMP LED from 80 C.",
   },
 }
@@ -525,8 +523,6 @@ NTx.AmpFields = {
   hidden("busmask", 0, 255, 1, "Bus per channel", function(a, v) a:SetBusMask(math.Clamp(math.floor(v + 0.5), 0, 255)) end),
   f("meters", 0, 2, 1, "Meters", function(a, v) a:SetMeters(math.Clamp(math.floor(v + 0.5), 0, 2)) end),
   f("pfc", 0, 1, 1, "Active PFC", function(a, v) a:SetPFC(v > 0.5) end),
-  f("hum", 0, 1, 1, "Mains hum", function(a, v) a:SetMainsHum(v > 0.5) end),
-  f("humdb", -120, -20, 1, "Hum level (dB)", function(a, v) a:SetHumDb(math.Clamp(v, -120, -20)) end),
   f("fan", 0, 1, 1, "Fan noise", function(a, v) a:SetFanNoise(v > 0.5) end),
   f("fandb", -120, 0, 1, "Fan level (dB)", function(a, v) a:SetFanNoiseDb(math.Clamp(v, -120, 0)) end),
   f("standby", 0, 1, 1, "Auto standby", function(a, v) a:SetAutoStandby(v > 0.5) end),

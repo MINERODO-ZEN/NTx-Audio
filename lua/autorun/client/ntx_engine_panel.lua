@@ -147,7 +147,7 @@ end)
 -- together here - the simulation switches, the server-owned rig parameters, the
 -- cabinet profile store and the diagnostics.
 --
--- What differs between one amplifier and the next is NOT here: PFC, mains hum,
+-- What differs between one amplifier and the next is NOT here: PFC,
 -- fan noise, standby and the thermal limiter are per-amplifier fields (see
 -- NTx.AmpFields), editable from the amplifier's own panel, the properties window
 -- or the tool. A car amplifier and a vintage class AB rack share this page and
@@ -211,7 +211,6 @@ local function buildAmpContents(panel)
   panel:ControlHelp("Read by the simulation on the server, so these are shared by everyone.")
   serverSlider(panel, "Crest factor, RMS to peak (dB)", "ntx_crest_db", 0, 30, 1)
   serverSlider(panel, "Nominal mains voltage (V)", "ntx_mains_nominal", 90, 260, 0)
-  serverSlider(panel, "Mains frequency (Hz, drives hum)", "ntx_mains_hz", 50, 60, 0)
   serverSlider(panel, "Room temperature (C)", "ntx_ambient_c", -10, 45, 0)
   serverSlider(panel, "Amplifier sync rate (Hz)", "ntx_amp_sync_hz", 1, 20, 0)
   serverSlider(panel, "Amplifier sync radius (units)", "ntx_amp_sync_dist", 0, 20000, 0)

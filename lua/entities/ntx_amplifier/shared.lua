@@ -40,11 +40,9 @@ function ENT:SetupDataTables()
 
   -- Behaviour that differs between one amplifier and the next, each on its own
   -- switch rather than a single "realistic" flag: a car amplifier has no
-  -- transformer hum and no 1200 W heatsink worth listening to, a vintage
+  -- no audible transformer hum and no 1200 W heatsink worth listening to, a vintage
   -- class AB rack has both.
   self:NetworkVar("Bool", 0, "PFC", { KeyName = "amppfc", Edit = { type = "Boolean", order = 13, category = "NTx Amp Behaviour" } })
-  self:NetworkVar("Bool", 1, "MainsHum", { KeyName = "ampthum", Edit = { type = "Boolean", order = 14, category = "NTx Amp Behaviour" } })
-  self:NetworkVar("Float", 9, "HumDb", { KeyName = "humdb", Edit = { type = "Float", min = -120, max = -20, step = 1, order = 15, category = "NTx Amp Behaviour" } })
   self:NetworkVar("Bool", 2, "FanNoise", { KeyName = "ampfan", Edit = { type = "Boolean", order = 16, category = "NTx Amp Behaviour" } })
   self:NetworkVar("Float", 10, "FanNoiseDb", { KeyName = "fandb", Edit = { type = "Float", min = -60, max = 0, step = 1, order = 17, category = "NTx Amp Behaviour" } })
   self:NetworkVar("Bool", 3, "AutoStandby", { KeyName = "ampstandby", Edit = { type = "Boolean", order = 18, category = "NTx Amp Behaviour" } })
@@ -107,8 +105,6 @@ function ENT:ApplyAmpProfile(id)
   self:SetHizVolt(0)
   self:SetMeters(p.stock.meters)
   self:SetPFC(p.stock.pfc == true)
-  self:SetMainsHum(p.stock.mainsHum == true)
-  self:SetHumDb(p.humDb)
   self:SetFanNoise(p.stock.fanNoise == true)
   self:SetFanNoiseDb(p.stock.fanNoise and -24 or -120)
   self:SetAutoStandby(p.stock.autoStandby == true)

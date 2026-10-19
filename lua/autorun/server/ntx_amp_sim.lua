@@ -42,8 +42,6 @@ CreateConVar("ntx_mains_nominal", "230", FCVAR_ARCHIVE + FCVAR_REPLICATED,
   "Nominal mains voltage for amplifiers with no wire input and no override (V)")
 CreateConVar("ntx_ambient_c", "22", FCVAR_ARCHIVE + FCVAR_REPLICATED,
   "Ambient temperature amplifiers and drivers sit in (C)")
-CreateConVar("ntx_mains_hz", "50", FCVAR_ARCHIVE + FCVAR_REPLICATED,
-  "Mains frequency (Hz); drives the pitch of audible mains hum")
 
 function NTx.AmpSimEnabled()
   local cv = GetConVar("ntx_amp_sim")
@@ -490,14 +488,8 @@ local function stepAmp(amp, now, dt)
   amp:SetFanRpm(st.fanRpm)
   amp:SetStandby(standby)
 
-  -- Effective audible extras. Mains hum rides the power factor, so a toroidal
-  -- supply that is also drawing badly hums worst - and a PFC supply with the
-  -- hum switch left on has nothing to hum with.
-  st.humDb = -120
-  if amp:GetMainsHum() and not amp:GetBlown() and amp:GetPower() then
-    st.humDb = math.Clamp((amp:GetHumDb() or -120)
-      + (1 - pf) * 46 - math.Clamp(loadFrac, 0, 1) * 8, -120, -20)
-  end
+  -- Fan noise. Mains hum is gone entirely: no synthesis, no convar, no
+  -- NetworkVars, nothing left to drive it.
   st.fanDb = -120
   if amp:GetFanNoise() and amp:GetFanOn() and amp:GetPower() and not amp:GetBlown() then
     st.fanDb = math.Clamp((amp:GetFanNoiseDb() or -120) + 26 * (st.fan or 0), -120, 0)

@@ -239,7 +239,7 @@ buildAmpUI = function(amp)
   label(scroll, "FAULT INJECTION - testing only. Each button latches until 'none'.", COL_DIM, 16):Dock(TOP)
 
   -- Behaviour toggles (everything that differs between one amplifier and the
-  -- next: PFC, hum, fan, standby, thermal limiter, meters, taps).
+  -- next: PFC, fan, standby, thermal limiter, meters, taps).
   label(scroll, "BEHAVIOUR", COL_WARN, 18):Dock(TOP)
   buildFields(scroll, amp, NTx.AmpFields, function(name)
     if name == "channels" then return amp:GetChannels() end
@@ -254,8 +254,6 @@ buildAmpUI = function(amp)
     if name == "busmask" then return amp:GetBusMask() end
     if name == "meters" then return amp:GetMeters() end
     if name == "pfc" then return amp:GetPFC() and 1 or 0 end
-    if name == "hum" then return amp:GetMainsHum() and 1 or 0 end
-    if name == "humdb" then return amp:GetHumDb() end
     if name == "fan" then return amp:GetFanNoise() and 1 or 0 end
     if name == "fandb" then return amp:GetFanNoiseDb() end
     if name == "standby" then return amp:GetAutoStandby() and 1 or 0 end

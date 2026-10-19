@@ -88,7 +88,7 @@ net.Receive("NTx.AmpSync", function()
       tsink = net.ReadFloat(), tdev = net.ReadFloat(), fanrpm = ru(),
       mainsV = net.ReadFloat(), mainsA = ru() / 100, railV = net.ReadFloat(),
       totalW = net.ReadFloat(), pf = ru() / 1000,
-      humDb = rd(10), fanDb = rd(10), red = rd(20), damage = ru() / 1000,
+      fanDb = rd(10), red = rd(20), damage = ru() / 1000,
       fault = net.ReadUInt(8), standby = net.ReadBool(), blown = net.ReadBool(),
       clipLatch = net.ReadBool(),
       ch = {}, spk = {},
@@ -709,18 +709,13 @@ function NTx.AmpTapData(ent, ch)
   return { g = gain, cl = cl, below = c.below, fault = rec.fault }
 end
 
--- Mains hum and fan noise belong to the amplifier, not the cabinet, so exactly
--- one page per amplifier owns them; otherwise a four-input rig would hum four
--- times over. Mains frequency follows the external grid's setting so a 60 Hz
--- venue hums at 60 Hz.
+-- Fan noise belongs to the amplifier, not the cabinet, so exactly one page per
+-- amplifier owns it; otherwise a four-input rig would run four fans.
 function NTx.AmpExtras(ent, isHost)
   local rec = NTx.AmpRecord(ent)
   if not rec or not isHost then return nil end
   if rec.blown or not ent:GetPower() then return nil end
-  local cv = GetConVar("ntx_mains_hz")
-  local hz = math.floor((cv and cv:GetFloat() or 50) + 0.5)
   return {
-    hum = { hz = (hz > 0 and hz or 50), db = rec.humDb or -120 },
     fan = { db = rec.fanDb or -120, rpm = rec.fanrpm or 0 },
   }
 end

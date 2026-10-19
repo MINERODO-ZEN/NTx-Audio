@@ -347,43 +347,32 @@ function setClip(ch,k){
   ch.drive=k;
   try{ ch.sh.curve=clipCurve(1024,k); }catch(e){}
 }
-// Amplifier-owned noise: mains hum (one oscillator per amplifier, not per page)
-// and the fan. Both sit at the amplifier output, so they sum into the master
-// bus rather than into a cabinet chain.
+// Amplifier fan noise. It sits at the amplifier output, so it sums into the
+// master bus rather than into a cabinet chain. Mains hum was removed outright.
 function ampNodes(){
-  if(C.hum&&C.fan) return;
+  if(C.fan) return;
   var t=C.ctx.currentTime;
-  var humOsc=C.ctx.createOscillator(); humOsc.type="sine"; humOsc.frequency.value=50;
-  var humGain=C.ctx.createGain(); humGain.gain.value=0;
-  humOsc.connect(humGain); humGain.connect(C.master); humOsc.start(t);
   var len=C.ctx.sampleRate*2, buf=C.ctx.createBuffer(1,len,C.ctx.sampleRate), dat=buf.getChannelData(0);
   for(var i=0;i<len;i++){ dat[i]=Math.random()*2-1; }
   var fanSrc=C.ctx.createBufferSource(); fanSrc.buffer=buf; fanSrc.loop=true;
   var fanLp=C.ctx.createBiquadFilter(); fanLp.type="lowpass"; fanLp.frequency.value=900; fanLp.Q.value=0.4;
   var fanGain=C.ctx.createGain(); fanGain.gain.value=0;
   fanSrc.connect(fanLp); fanLp.connect(fanGain); fanGain.connect(C.master); fanSrc.start(t);
-  C.hum={osc:humOsc,gain:humGain}; C.fan={src:fanSrc,gain:fanGain};
+  C.fan={src:fanSrc,gain:fanGain};
 }
 function applyAmpAudio(a){
   // No payload means this page is not the amplifier's owner. Ramp to silence if
   // the nodes exist, but never create them: an 8|600 rig would otherwise carry a
-  // hum oscillator and a noise buffer per input for nothing.
+  // noise buffer per input for nothing.
   if(!a){
-    if(C.hum){ try{ C.hum.gain.gain.setTargetAtTime(0,C.ctx.currentTime,0.2); C.fan.gain.gain.setTargetAtTime(0,C.ctx.currentTime,0.3); }catch(e){} }
+    if(C.fan){ try{ C.fan.gain.gain.setTargetAtTime(0,C.ctx.currentTime,0.3); }catch(e){} }
     return;
   }
   ampNodes();
   var t=C.ctx.currentTime;
-  var hdb=(a&&a.hum)?a.hum.db:-120;
-  var hz=(a&&a.hum&&a.hum.hz)?a.hum.hz:50;
-  var hg=hdb>-100?Math.pow(10,hdb/20):0;
   var fdb=(a&&a.fan)?a.fan.db:-120;
   var fg=fdb>-100?Math.pow(10,fdb/20):0;
-  try{
-    C.hum.osc.frequency.setTargetAtTime(hz,t,0.2);
-    C.hum.gain.gain.setTargetAtTime(hg,t,0.2);
-    C.fan.gain.gain.setTargetAtTime(fg,t,0.3);
-  }catch(e){}
+  try{ C.fan.gain.gain.setTargetAtTime(fg,t,0.3); }catch(e){}
 }
 // Chains are built before (or survive across) source (re)creation, and a
 // fresh source starts unwired: this is the single place that feeds audio
@@ -544,7 +533,7 @@ function ntxUpdate(s){
       }
     }
   }catch(e){}
-  // Amplifier hum / fan, refreshed on every push so a rig that is switched off
+  // Amplifier fan, refreshed on every push so a rig that is switched off
   // (or whose page lost the amplifier) goes quiet instead of droning forever.
   try{ applyAmpAudio(s.amp); }catch(e){}
 }

@@ -634,8 +634,8 @@ hook.Add("Think", "NTx.WebAudioThink", function()
   end
   local totalEnergy = webEnergy + bassEnergy
   local norm = NTx.HeadroomNorm(totalEnergy)
-  -- Mains hum and fan noise are amplifier noise, not cabinet noise: one page
-  -- per amplifier owns them so a four-input rig does not hum four times. The
+  -- Fan noise is amplifier noise, not cabinet noise: one page per amplifier
+  -- owns it so a four-input rig does not run four fans. The
   -- first page that reaches an amplifier claims it, which is stable because the
   -- input order is stable.
   local claimed = {}
