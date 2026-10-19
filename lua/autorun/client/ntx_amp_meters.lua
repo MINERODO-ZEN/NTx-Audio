@@ -820,11 +820,17 @@ net.Receive("NTx.AmpMeters", function()
   local count = net.ReadUInt(6)
   -- Measured, not assumed: the rate the fast path ARRIVES is the only one
   -- that can be compared against the sim.
+  -- Counted as MESSAGES. Counting the amplifiers in them gave a number several
+  -- times too large, which is how "100 per second" appeared for a path capped
+  -- at 66.
   local now = CurTime()
   NTx.MeterMsgAt = NTx.MeterMsgAt or now
-  NTx.MeterMsgRate = math.Round((count) / math.max(now - NTx.MeterMsgAt, 0.001), 1)
-  NTx.MeterMsgAt = now
   NTx.MeterMsgCount = (NTx.MeterMsgCount or 0) + 1
+  if now - NTx.MeterMsgAt >= 1 then
+    NTx.MeterMsgRate = math.Round(NTx.MeterMsgCount / (now - NTx.MeterMsgAt), 1)
+    NTx.MeterMsgAt = now
+    NTx.MeterMsgCount = 0
+  end
   for _ = 1, count do
     local ent = net.ReadEntity()
     local usable = net.ReadUInt(4)

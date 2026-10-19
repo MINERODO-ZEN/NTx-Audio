@@ -25,7 +25,13 @@ NTx = NTx or {}
 -- input in the rig would quietly report a garbage level.
 local RMS_PROTO = 3
 
-local cadence = 0.25          -- seconds between reports; the server overwrites this
+-- Seconds between reports. The server assigns the real one, but the default
+-- matters: a client that never receives it used to sit at a quarter of a
+-- second - four hertz - and that is exactly the rate the source was seen
+-- publishing at. Sixty-sixthz is the server's tick rate, which is what the
+-- server would have assigned anyway.
+local cadence = 1 / 66
+local nextCadenceReq = 0
 local nextSend = 0
 local announced = false
 
@@ -108,11 +114,22 @@ hook.Add("Think", "NTx.AmpRmsReport", function()
     if running then
       net.Start("NTx.AmpRmsCadenceReq")
       net.SendToServer()
+      nextCadenceReq = CurTime() + 2
     end
     announced = true
     return
   end
   if not running then return end
+  -- Ask again periodically. The request used to be sent ONLY on a page state
+  -- change, so a client that joined with the page already up never asked and
+  -- never learned the rate - and the server only sent it when the value
+  -- changed, so asking again would not have helped either. Between them the
+  -- client could sit at its default for ever.
+  if CurTime() >= nextCadenceReq then
+    nextCadenceReq = CurTime() + 2
+    net.Start("NTx.AmpRmsCadenceReq")
+    net.SendToServer()
+  end
   if CurTime() < nextSend then return end
   nextSend = CurTime() + cadence
   report()

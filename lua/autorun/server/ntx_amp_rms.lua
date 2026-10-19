@@ -123,11 +123,16 @@ local function setReady(ply, ready)
   else
     every = base * 4
   end
-  if ply.__ntxRmsEvery == every then return end
+  -- Sent on EVERY request, not only when the value changed. The client asks
+  -- periodically, and it would have been told nothing if the rate had not
+  -- changed since last time - so a client that missed the first one stayed on
+  -- its default for ever.
+  local changed = ply.__ntxRmsEvery ~= every
   ply.__ntxRmsEvery = every
   net.Start("NTx.AmpRmsCadence")
   net.WriteFloat(every)
   net.Send(ply)
+  if not changed then return end
   print(string.format("[NTx] %s will report measured levels every %.4fs (%s).",
     ply:Nick(), every,
     isOwner and "owns an amplifier" or (anyAmpOwned() and "no amplifier" or "no amplifier is owned")))
