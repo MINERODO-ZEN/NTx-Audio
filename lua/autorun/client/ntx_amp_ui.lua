@@ -46,8 +46,19 @@ end
 -- the caller passes. Generating the page from the table is the point: the
 -- panel and the server's validation read the same list.
 local function buildFields(parent, ent, fields, getter, sender)
+  -- A profile can lock rows it owns. The row stays in NTx.AmpFields, so the
+  -- server-side validation and the patch window still know about it - this only
+  -- stops the panel offering to change a number the datasheet already fixed.
+  local locked = (ent.Prof and ent:Prof() and ent:Prof().locked) or nil
+  local function isLocked(name)
+    if not locked then return false end
+    for _, n in ipairs(locked) do
+      if n == name then return true end
+    end
+    return false
+  end
   for _, entry in ipairs(fields) do
-    if entry.label ~= "" and entry.set and not entry.hidden then
+    if entry.label ~= "" and entry.set and not entry.hidden and not isLocked(entry.name) then
       local r = row(parent)
       local lbl = label(r, entry.label)
       lbl:SetWide(150)

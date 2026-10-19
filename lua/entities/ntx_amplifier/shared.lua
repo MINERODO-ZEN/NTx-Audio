@@ -129,6 +129,11 @@ function ENT:ApplyAmpProfile(id)
   self:SetFaultCode(0)
   self:SetClipLatch(false)
   if p.model then self:SetModel(p.model) end
+  -- Body group carries what is only printed on the panel. One chassis serves
+  -- several model numbers, so the body is the only thing that tells them
+  -- apart and it has to follow the profile rather than whatever was picked
+  -- before. Applied after SetModel because changing the model resets bodies.
+  if p.body then self:ApplyBody() end
   if p.mass then
     local phys = self:GetPhysicsObject()
     if IsValid(phys) then phys:SetMass(math.Clamp(p.mass, 1, 200)) end
@@ -138,6 +143,22 @@ end
 
 function ENT:Prof()
   return NTx.AmpProfile(self:GetProfile())
+end
+
+-- Force the body group this profile's faceplate lives on. Read from the
+-- profile every time rather than stored, so a profile edit takes effect on the
+-- next apply and an amplifier cannot end up showing one model's front with
+-- another model's numbers. A profile with no body leaves the model alone,
+-- which is how the pre-bodygroup profiles keep working.
+function ENT:ApplyBody()
+  local p = self:Prof()
+  if not p or not p.body then return false end
+  local n = self:GetNumBodyGroups()
+  if not n or n < 1 then return false end
+  local b = math.Clamp(math.floor(tonumber(p.body) or 0), 0, 255)
+  if self:GetBodygroup(0) == b then return true end
+  self:SetBodygroup(0, b)
+  return true
 end
 
 function ENT:UsableChannels()

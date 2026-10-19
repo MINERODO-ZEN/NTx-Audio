@@ -399,8 +399,21 @@ local function applyFields(ply, kind, ent, pairsCount)
     local name = net.ReadString()
     local value = net.ReadFloat()
     local entry = (kind == "amp") and NTx.AmpField(name) or NTx.SpkField(name)
+    -- A profile that owns a spec owns it server-side too. Hiding the row in the
+    -- panel is cosmetic; without this a crafted message still sets it, and the
+    -- whole point is that the datasheet figure is the one that runs.
+    local locked = kind == "amp" and ent.Prof and ent:Prof() and ent:Prof().locked
+    local isLocked = false
+    if locked then
+      for _, n in ipairs(locked) do
+        if n == name then isLocked = true break end
+      end
+    end
     if not entry then
       ply:ChatPrint("[NTx] Rejected: unknown field '" .. tostring(name) .. "'.")
+    elseif isLocked then
+      ply:ChatPrint("[NTx] Rejected: '" .. tostring(name)
+        .. "' is fixed by this amplifier's model.")
     elseif not entry.set then
       ply:ChatPrint("[NTx] Rejected: field '" .. tostring(name) .. "' is read-only.")
     else
