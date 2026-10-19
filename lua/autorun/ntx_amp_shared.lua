@@ -221,22 +221,25 @@ local K_SERIES = {
   -- into a single entry.
   variant = true,
   category = "Powersoft K Series",
+  -- The faceplates are the "panel" body group; group 0 is the chassis and has
+  -- only one sub-model. The sub-model order is K2, K3, K6, K10, K20.
+  bodyGroup = 1,
 }
 
 for _, spec in ipairs({
-  { id = "k2", vpeak = 140,  body = 1, w = 2400, w4 = 1950, w8 = 1000, bw4 = 4800, bw8 = 3900,
+  { id = "k2", vpeak = 140,  body = 0, w = 2400, w4 = 1950, w8 = 1000, bw4 = 4800, bw8 = 3900,
     sens = { 4.48, 3.17, 2.47, 1.59 }, idleW = 75, idleA = 1.3, apeak = 102, mass = 8, depth = 15,
     eta = 0.82, kdev = 0.021 },
-  { id = "k3", vpeak = 165,  body = 2, w = 2800, w4 = 2600, w8 = 1400, bw4 = 5600, bw8 = 5200,
+  { id = "k3", vpeak = 165,  body = 1, w = 2800, w4 = 2600, w8 = 1400, bw4 = 5600, bw8 = 5200,
     sens = { 5.30, 3.75, 2.66, 1.88 }, idleW = 75, idleA = 1.3, apeak = 102, mass = 8, depth = 15,
     eta = 0.82, kdev = 0.021 },
-  { id = "k6", vpeak = 153,  body = 3, w = 3600, w4 = 2500, w8 = 1300, bw4 = 7200, bw8 = 5000,
+  { id = "k6", vpeak = 153,  body = 2, w = 3600, w4 = 2500, w8 = 1300, bw4 = 7200, bw8 = 5000,
     sens = { 5.11, 3.62, 2.56, 1.81 }, idleW = 84, idleA = 1.03, apeak = 125, mass = 12, depth = 18.7,
     eta = 0.84, kdev = 0.030 },
-  { id = "k10", vpeak = 200, body = 4, w = 6000, w4 = 4000, w8 = 2000, bw4 = 12000, bw8 = 8000,
+  { id = "k10", vpeak = 200, body = 3, w = 6000, w4 = 4000, w8 = 2000, bw4 = 12000, bw8 = 8000,
     sens = { 6.34, 4.49, 3.18, 2.25 }, idleW = 84, idleA = 1.03, apeak = 125, mass = 12, depth = 18.7,
     eta = 0.85, kdev = 0.033 },
-  { id = "k20", vpeak = 225, body = 5, w = 9000, w4 = 5200, w8 = 2700, bw4 = 18000, bw8 = 10400,
+  { id = "k20", vpeak = 225, body = 4, w = 9000, w4 = 5200, w8 = 2700, bw4 = 18000, bw8 = 10400,
     sens = { 7.37, 5.22, 3.68, 2.62 }, idleW = 88, idleA = 1.17, apeak = 125, mass = 12, depth = 18.7,
     eta = 0.86, kdev = 0.034 },
 }) do

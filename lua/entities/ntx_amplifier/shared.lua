@@ -150,18 +150,44 @@ end
 -- next apply and an amplifier cannot end up showing one model's front with
 -- another model's numbers. A profile with no body leaves the model alone,
 -- which is how the pre-bodygroup profiles keep working.
+-- Which body group carries the model number, and which of its sub-models.
+--
+-- A chassis like the Powersoft K has TWO groups: "body" with one sub-model,
+-- which is the chassis, and "panel" with five, which are the K2/K3/K6/K10/K20
+-- faceplates. The variant is in the SECOND group, so taking the first group and
+-- clamping the sub-model into it silently did nothing at all - which is what
+-- "the panel never switches" looked like.
+--
+-- The profile names the group when it wants a particular one, and otherwise
+-- the group with the most sub-models is used: a chassis is one sub-model, a
+-- panel is a row of them.
 function ENT:ApplyBody()
   local p = self:Prof()
   if not p or not p.body then return false end
   -- GetBodyGroups, not GetNumBodyGroups: there is no such method, so the call
   -- raised and aborted the rest of ApplyAmpProfile before it could set the
-  -- body - which is why the faceplate never changed.
+  -- body at all.
   local groups = self:GetBodyGroups()
   if not istable(groups) or #groups < 1 then return false end
-  local g = groups[1]
-  local id = tonumber(g.id) or 0
-  local n = math.floor(tonumber(g.num) or 0)
-  if n < 1 then return false end
+
+  local id, n
+  if p.bodyGroup then
+    for _, g in ipairs(groups) do
+      if (tonumber(g.id) or -1) == p.bodyGroup then
+        id = tonumber(g.id)
+        n = math.floor(tonumber(g.num) or 0)
+        break
+      end
+    end
+  end
+  if not id then
+    for _, g in ipairs(groups) do
+      local num = math.floor(tonumber(g.num) or 0)
+      if num > (n or 0) then id, n = tonumber(g.id), num end
+    end
+  end
+  if not id or not n or n < 1 then return false end
+
   local b = math.Clamp(math.floor(tonumber(p.body) or 0), 0, n - 1)
   if self:GetBodygroup(id) == b then return true end
   self:SetBodygroup(id, b)
