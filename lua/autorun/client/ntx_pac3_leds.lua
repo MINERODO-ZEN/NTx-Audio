@@ -12,7 +12,11 @@
 --
 -- What is left here is the part that has to be in the game: deciding what
 -- colour and brightness each lamp is this frame.
-AddCSLuaFile()
+-- AddCSLuaFile is a server function. Calling it bare from a client file
+-- risks aborting the whole file if it is absent here, and everything
+-- after this line - the reporter, its Think hook, its command - would
+-- silently never register.
+if SERVER then AddCSLuaFile() end
 if not CLIENT then return end
 
 NTx = NTx or {}

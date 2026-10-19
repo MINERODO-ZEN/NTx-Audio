@@ -10,7 +10,11 @@
 -- The cadence is not chosen here. The server decides, because it is the only
 -- party that knows who owns an amplifier, and a client-chosen rate is a client
 -- that can flood the server.
-AddCSLuaFile()
+-- AddCSLuaFile is a server function. Calling it bare from a client file
+-- risks aborting the whole file if it is absent here, and everything
+-- after this line - the reporter, its Think hook, its command - would
+-- silently never register.
+if SERVER then AddCSLuaFile() end
 if not CLIENT then return end
 
 NTx = NTx or {}

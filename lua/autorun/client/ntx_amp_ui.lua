@@ -682,3 +682,21 @@ concommand.Add("ntx_amp_bus", function(_, _, args)
   end
 end)
 
+util.AddNetworkString("NTx.ChainReq")
+util.AddNetworkString("NTx.ChainRep")
+
+-- Prints the server's view of the whole level path, plus the two things only
+-- this client knows: whether the page is running, and what arrived in the graph.
+net.Receive("NTx.ChainRep", function()
+  print(net.ReadString())
+  print(string.format("page running=%s  graph: %d inputs %d speakers %d mixers",
+    tostring(NTx.WebAudioRunning),
+    #(NTx.Graph and NTx.Graph.inputs or {}),
+    #(NTx.Graph and NTx.Graph.speakers or {}),
+    #(NTx.Graph and NTx.Graph.mixers or {})))
+end)
+
+concommand.Add("ntx_chain", function()
+  net.Start("NTx.ChainReq")
+  net.SendToServer()
+end)
