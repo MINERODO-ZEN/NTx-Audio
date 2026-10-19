@@ -27,23 +27,35 @@ end
 -- no measurement this stays at the fader value alone.
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
-  local lvl = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
-    * ((NTx.MeasuredRms and NTx.MeasuredRms(self)) or 1)
-  local n = (NTx and NTx.BUS_COUNT) or 4
+  local vol = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
+  -- One level per BUS, not one level copied everywhere. The buses are
+  -- side-specific, so publishing the same figure in all five slots is what made
+  -- MidL and MidR indistinguishable and left every meter unable to reflect the
+  -- side its channel was assigned.
+  local rl = ((NTx.MeasuredRms and NTx.MeasuredRms(self, 0)) or 1)
+  local rr = ((NTx.MeasuredRms and NTx.MeasuredRms(self, 1)) or 1)
+  -- Energy-preserving sum, matching what a mono bus actually plays.
+  local rmono = math.sqrt((rl * rl + rr * rr) * 0.5)
+  local n = (NTx and NTx.BUS_COUNT) or 5
   local changed = false
   if not istable(self.WireBuses) then self.WireBuses = {} end
   for i = 1, n do
+    local sd = (NTx and NTx.BusSideOf) and NTx.BusSideOf(i - 1) or 0
+    local lvl = vol * ((sd == 0) and rl or (sd == 1) and rr or rmono)
     if self.WireBuses[i] ~= lvl then
       self.WireBuses[i] = lvl
       changed = true
     end
   end
-  if changed or self.WireOut == nil then
-    self.WireOut = lvl
+  -- changed alone covers the first pass: WireBuses starts empty, so every slot
+  -- differs from nil and the flag is set. There is deliberately no
+  -- `self.WireOut = lvl` here - lvl is scoped to the loop body, so reading it
+  -- out here would assign a global nil and defeat the sentinel entirely.
+  if changed then
     -- A fresh table each time: Wiremod holds ARRAY values by reference, and
     -- mutating the one it already stores would not re-trigger the fan-out.
     local buses = {}
-    for i = 1, n do buses[i] = lvl end
+    for i = 1, n do buses[i] = self.WireBuses[i] end
     NTx.WireOut(self, "Buses", buses)
   end
 end

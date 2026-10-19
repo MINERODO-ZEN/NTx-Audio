@@ -27,7 +27,7 @@ util.AddNetworkString("NTx.AmpRmsReady")
 util.AddNetworkString("NTx.AmpRmsCadence")
 util.AddNetworkString("NTx.AmpRmsCadenceReq")
 
--- input entity -> { v = level 0-1, at = CurTime(), by = Player }
+-- input entity -> { l = left 0-1, r = right 0-1, v = mono 0-1, at, by = Player }
 NTx.LiveRms = NTx.LiveRms or {}
 
 -- How long a report stays good. The client ages its own PageRms at one second,
@@ -37,12 +37,30 @@ local RMS_TTL = 1.0
 
 -- The level for one input, or nil when nobody has reported recently. Callers
 -- treat nil as "use the fader estimate".
-function NTx.MeasuredRms(ent)
+--
+-- side picks which part of the programme: 0 left, 1 right, nil the mono sum.
+-- The buses are side-specific - MidL has to see only the left programme or its
+-- meter is reading the wrong signal - so this cannot stay a single number.
+function NTx.MeasuredRms(ent, side)
   if not IsValid(ent) then return nil end
   local r = NTx.LiveRms[ent]
   if not r then return nil end
   if (CurTime() - r.at) > RMS_TTL then return nil end
+  if side == 0 then return r.l or r.v end
+  if side == 1 then return r.r or r.v end
   return r.v
+end
+
+-- Energy-preserving sum of the two sides, matching what a mono bus actually
+-- plays. Halving the sum of squares rather than averaging the levels keeps the
+-- result at the same loudness a mono mix of the same material would be.
+function NTx.MeasuredRmsMono(ent)
+  local l = NTx.MeasuredRms(ent, 0)
+  local r = NTx.MeasuredRms(ent, 1)
+  if l == nil and r == nil then return nil end
+  l = l or 0
+  r = r or 0
+  return math.sqrt((l * l + r * r) * 0.5)
 end
 
 -- Server tick interval. TICK is not dependable on the server realm - it is
@@ -138,11 +156,17 @@ net.Receive("NTx.AmpRms", function(_, ply)
   local now = CurTime()
   for _ = 1, count do
     local ent = Entity(net.ReadUInt(16))
+    local l = net.ReadFloat()
+    local r = net.ReadFloat()
     local v = net.ReadFloat()
-    -- Only real inputs, only a sane level. Anything else is dropped, not
+    -- Only real inputs, only sane levels. Anything else is dropped, not
     -- stored, so a crafted packet cannot poison the model.
     if IsValid(ent) and ent:GetClass() == "ntx_input_url" then
+      l = math.Clamp(tonumber(l) or 0, 0, 1)
+      r = math.Clamp(tonumber(r) or 0, 0, 1)
       NTx.LiveRms[ent] = {
+        l = l,
+        r = r,
         v = math.Clamp(tonumber(v) or 0, 0, 1),
         at = now,
         by = ply,

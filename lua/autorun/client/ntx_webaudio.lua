@@ -166,6 +166,8 @@ local function buildTaps(input, mrec, listenerPos)
       -- the thing that made a channel's type seem to do nothing.
       local ampGain, ampClip = 1, 1
       local playSub = s.stype == "SUB"
+      -- nil means "no bus": the tap takes the full source, as it always did.
+      local busId = nil
       local ampEnt = IsValid(s.ent) and s.ent.GetAmp and s.ent:GetAmp() or nil
       if IsValid(ampEnt) and ampEnt:GetClass() == "ntx_amplifier" and not s.ent:GetActive() then
         local ch = NTx.AmpSpeakerChannel(ampEnt, s.ent)
@@ -178,7 +180,8 @@ local function buildTaps(input, mrec, listenerPos)
         -- MidL, so asking it for a bus would quietly force every unamplified
         -- or unwired cabinet to play the MID bus.
         if ch > 0 and ampEnt.ChannelIsFed and ampEnt:ChannelIsFed(ch) then
-          playSub = NTx.BusIsSub(ampEnt:ChannelBusId(ch))
+          busId = ampEnt:ChannelBusId(ch)
+          playSub = NTx.BusIsSub(busId)
         end
       end
       -- Everything downstream (bus fader, tap kind, directivity branch) reads
@@ -239,6 +242,10 @@ local function buildTaps(input, mrec, listenerPos)
         energy = energy + audible * audible
         taps[#taps + 1] = {
           id = tostring(s.ent:EntIndex()), kind = playSub and "SUB" or "MID",
+          -- Which part of the programme this tap plays: 0 left, 1 right, 2 the
+          -- sum of both. Absent for a cabinet with no fed channel, and the page
+          -- then feeds it the whole source unchanged.
+          side = busId ~= nil and NTx.BusSideOf(busId) or nil,
           g = math.Round(gain, 4), d = math.Round(delayMs, 3), inv = inv,
           px = math.Round(s.pos.x, 2), py = math.Round(s.pos.y, 2), pz = math.Round(s.pos.z, 2),
           -- Cone disabled on the panner (directivity already in g); HRTF and
@@ -437,6 +444,10 @@ function NTx.WebAudioOnStatus(pkey, json)
     -- server's commanded estimate.
     NTx.PageRms[pkey] = {
       v = math.Clamp(tonumber(r.v) or 0, 0, 4),
+      -- Per side, so a bus can read the part of the programme it actually
+      -- plays. Absent on an older page, and the server falls back to v.
+      l = tonumber(r.l),
+      r = tonumber(r.r),
       c = tonumber(r.c) or 0,
       at = CurTime(),
     }

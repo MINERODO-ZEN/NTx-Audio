@@ -55,7 +55,7 @@ local function report()
     -- The client ages its own copy at one second; anything older would arrive
     -- at the server already stale.
     if idx and (now - r.at) < 1 then
-      items[#items + 1] = { idx = idx, v = r.v }
+      items[#items + 1] = { idx = idx, v = r.v, l = r.l, r = r.r }
       -- Cap as we go rather than trimming afterwards: table.move does not exist
       -- in GLua's 5.1 base library.
       if #items >= 64 then break end
@@ -66,6 +66,10 @@ local function report()
   net.WriteUInt(#items, 6)
   for _, it in ipairs(items) do
     net.WriteUInt(it.idx, 16)
+    -- Sides first: a page that predates per-side reporting sent a single mono
+    -- figure, which the server falls back to for both.
+    net.WriteFloat(it.l or it.v)
+    net.WriteFloat(it.r or it.v)
     net.WriteFloat(it.v)
   end
   net.SendToServer()
