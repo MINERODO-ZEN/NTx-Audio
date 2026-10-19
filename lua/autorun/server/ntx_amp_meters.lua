@@ -26,8 +26,16 @@ local function meterInterval()
 end
 
 -- One dB value, offset so silence (-120) is still a positive number.
+--
+-- This WRITES. It used to compute the number and return it, and the call site
+-- was a bare statement, so the level never went on the wire at all: the server
+-- sent two bools per channel where the client expected a level and two bools.
+-- Sixteen bits of drift per channel then desynchronised the whole message, and
+-- amplifiers read each other's bytes - which is why one of them showed a
+-- nonsense level that never changed while the others, whose data went to the
+-- wrong entity, kept the correct value from the slow sync.
 local function wdB(v)
-  return math.Clamp(math.floor(((tonumber(v) or -120) + 130) * 20 + 0.5), 0, 65535)
+  net.WriteUInt(math.Clamp(math.floor(((tonumber(v) or -120) + 130) * 20 + 0.5), 0, 65535), 16)
 end
 
 function NTx.BroadcastAmpMeters()
@@ -51,7 +59,7 @@ function NTx.BroadcastAmpMeters()
   for _, e in ipairs(list) do
     local amp, st = e.amp, e.st
     net.WriteEntity(amp)
-    net.WriteUInt(amp:UsableChannels(), 3)
+    net.WriteUInt(amp:UsableChannels(), 4)
     for _, ch in ipairs(amp:ActiveChannels()) do
       local c = st[ch]
       wdB(c and c.linDb)

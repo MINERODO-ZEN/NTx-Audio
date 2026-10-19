@@ -723,10 +723,21 @@ concommand.Add("ntx_leds_status", function()
           -- its own. Report the state's duty next to the level it was derived
           -- from: a mismatch is the whole story.
           local held = NTx.AmpLeds[ledKey(amp, ch)]
-          chans[#chans + 1] = string.format("%d:%d%s%s duty=%s", ch,
-            math.floor(tonumber(c.linDb) or -120),
+          -- The fast path and the slow path are the same number computed on
+          -- the server and sent two different ways. If they disagree, the
+          -- message is being read out of step, and that is worth saying
+          -- rather than leaving it to be noticed as a strange level.
+          local slow = tonumber(c.cmdDb) or -120
+          local fast = tonumber(c.linDb) or -120
+          local drift = ""
+          if math.abs(fast - slow) > 12 then
+            drift = string.format(" DRIFT(fast=%.0f slow=%.0f)", fast, slow)
+          end
+          chans[#chans + 1] = string.format("%d:%d%s%s%s duty=%s", ch,
+            math.floor(fast),
             (c.clip and " CLIP" or ""),
             ((tonumber(held and held.holdUntil) or 0) > CurTime() and " HOLD" or ""),
+            drift,
             held and tostring(math.Round((tonumber(held.duty) or 0), 3)) or "NO STATE")
         end
       end
@@ -784,7 +795,7 @@ net.Receive("NTx.AmpMeters", function()
   local count = net.ReadUInt(6)
   for _ = 1, count do
     local ent = net.ReadEntity()
-    local usable = net.ReadUInt(3)
+    local usable = net.ReadUInt(4)
     if IsValid(ent) then
       local rec = NTx.Amps[ent:EntIndex()]
       if rec then
