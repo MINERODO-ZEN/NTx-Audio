@@ -356,32 +356,14 @@ function setClip(ch,k){
 }
 // Amplifier fan noise. It sits at the amplifier output, so it sums into the
 // master bus rather than into a cabinet chain. Mains hum was removed outright.
-function ampNodes(){
-  if(C.fan) return;
-  var t=C.ctx.currentTime;
-  var len=C.ctx.sampleRate*2, buf=C.ctx.createBuffer(1,len,C.ctx.sampleRate), dat=buf.getChannelData(0);
-  for(var i=0;i<len;i++){ dat[i]=Math.random()*2-1; }
-  var fanSrc=C.ctx.createBufferSource(); fanSrc.buffer=buf; fanSrc.loop=true;
-  var fanLp=C.ctx.createBiquadFilter(); fanLp.type="lowpass"; fanLp.frequency.value=900; fanLp.Q.value=0.4;
-  var fanGain=C.ctx.createGain(); fanGain.gain.value=0;
-  fanSrc.connect(fanLp); fanLp.connect(fanGain); fanGain.connect(C.master); fanSrc.start(t);
-  C.fan={src:fanSrc,gain:fanGain};
-}
+// The amplifier fan is NOT made here any more. It used to be, which meant it
+// was summed into the programme's master bus: a noise source with no position
+// on it, at full level, audible from anywhere on the map - and doubled up
+// with the spatial copy in the SFX page. The SFX page owns it now, where it is
+// panned at the amplifier and buried under the programme.
 function applyAmpAudio(a){
-  // No payload means this page is not the amplifier's owner. Ramp to silence if
-  // the nodes exist, but never create them: an 8|600 rig would otherwise carry a
-  // noise buffer per input for nothing.
-  if(!a){
-    if(C.fan){ try{ C.fan.gain.gain.setTargetAtTime(0,C.ctx.currentTime,0.3); }catch(e){} }
-    return;
-  }
-  ampNodes();
-  var t=C.ctx.currentTime;
-  var fdb=(a&&a.fan)?a.fan.db:-120;
-  var fg=fdb>-100?Math.pow(10,fdb/20):0;
-  try{ C.fan.gain.gain.setTargetAtTime(fg,t,0.3); }catch(e){}
-}
-// Chains are built before (or survive across) source (re)creation, and a
+  // Nothing: the amplifier's own noise lives in the SFX page now.
+}// Chains are built before (or survive across) source (re)creation, and a
 // fresh source starts unwired: this is the single place that feeds audio
 // into a chain head. Without it the filters process dangling silence.
 // Where this chain takes its input from. side is the bus's pick: 0 left only,
@@ -540,9 +522,8 @@ function ntxUpdate(s){
       }
     }
   }catch(e){}
-  // Amplifier fan, refreshed on every push so a rig that is switched off
-  // (or whose page lost the amplifier) goes quiet instead of droning forever.
-  try{ applyAmpAudio(s.amp); }catch(e){}
+  // The amplifier's fan is not driven from here: it belongs to the SFX page,
+  // which is a separate AudioContext and positions it at the amplifier.
 }
 
 // ------------------------------------------------------------ amplifier SFX

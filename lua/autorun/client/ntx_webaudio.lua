@@ -778,11 +778,6 @@ hook.Add("Think", "NTx.WebAudioThink", function()
   end
   local totalEnergy = webEnergy + bassEnergy
   local norm = NTx.HeadroomNorm(totalEnergy)
-  -- Fan noise is amplifier noise, not cabinet noise: one page per amplifier
-  -- owns it so a four-input rig does not run four fans. The
-  -- first page that reaches an amplifier claims it, which is stable because the
-  -- input order is stable.
-  local claimed = {}
   -- The amplifier SFX page is separate from the programme pages, so it gets
   -- its own state and its own context. Opened here rather than on demand so
   -- the fan is already running when a rig is switched on.
@@ -799,17 +794,11 @@ hook.Add("Think", "NTx.WebAudioThink", function()
         smoothMs = cvMotionSmooth:GetFloat(),
         maxRate = cvMotionRate:GetFloat(),
       }
-      -- Amplifier-owned noise, once per amplifier.
-      if NTx.AmpExtras then
-        for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
-          if IsValid(amp) and IsValid(amp:GetMixer()) and amp:GetMixer() == pend.ent:GetMixer()
-            and not claimed[amp] then
-            claimed[amp] = true
-            local extras = NTx.AmpExtras(amp, true)
-            if extras then payload.amp = extras end
-          end
-        end
-      end
+      -- The amplifier's own noise is NOT sent to the programme page. It used
+      -- to be, and the page synthesised it there: a noise source with no
+      -- position on it, summed into the programme's master bus, so it was
+      -- audible from the whole map. The SFX page owns it now, panned at the
+      -- amplifier and buried under the programme.
       if IsValid(P.panel) then
         P.panel:Call("ntxUpdate(" .. util.TableToJSON(payload) .. ")")
       end

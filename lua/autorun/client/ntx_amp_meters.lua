@@ -718,11 +718,16 @@ concommand.Add("ntx_leds_status", function()
         if c then
           -- The clip flag matters: a meter that blinks from full to zero is the
           -- clip HOLD, and a single reading of the level never catches it.
-          local held = NTx.AmpLeds[ledKey(amp, ch)] or {}
-          chans[#chans + 1] = string.format("%d:%d%s%s", ch,
+          -- The level meter is the only lamp that reads the LED STATE rather
+          -- than the server's flags, so it is the only one that can break on
+          -- its own. Report the state's duty next to the level it was derived
+          -- from: a mismatch is the whole story.
+          local held = NTx.AmpLeds[ledKey(amp, ch)]
+          chans[#chans + 1] = string.format("%d:%d%s%s duty=%s", ch,
             math.floor(tonumber(c.linDb) or -120),
             (c.clip and " CLIP" or ""),
-            ((tonumber(held.holdUntil) or 0) > CurTime() and " HOLD" or ""))
+            ((tonumber(held and held.holdUntil) or 0) > CurTime() and " HOLD" or ""),
+            held and tostring(math.Round((tonumber(held.duty) or 0), 3)) or "NO STATE")
         end
       end
       print(string.format("  amp %d profile=%q model=%s", amp:EntIndex(),
