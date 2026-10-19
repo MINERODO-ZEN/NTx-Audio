@@ -189,7 +189,13 @@ local function stepAmp(amp, now, dt)
 
   -- Lockout: outside the supply's window the PSU stops trying. Mains-lockout is
   -- the difference between "the rig is quiet for a minute" and "it is dead".
-  if mainsState ~= "ok" then
+  --
+  -- undervoltage is NOT a lockout. It means "below the specified +/- band but
+  -- still running", which is a different thing from brownout: a universal-input
+  -- amplifier rated 100-240 V +/-10% is specified down to 90 V and has to keep
+  -- working there. Locking on it meant a K-series went silent at 206 V - and
+  -- silently, because undervoltage carries no fault code.
+  if mainsState == "none" or mainsState == "brownout" or mainsState == "overvoltage" then
     st.bad = (st.bad or 0) + dt
     st.good = 0
   else
@@ -272,7 +278,16 @@ local function stepAmp(amp, now, dt)
     local derate = NTx.AmpDerateDb(p, tdevPrev) + dmgDerate
 
     local iScale = (paired and mode == "parallel") and 2 or 1
-    local vmax, rail = NTx.AmpChannelCeiling(p, mains, z, st.loadFrac or 0, derate, standby, iScale)
+    -- Mains for the OUTPUT ceiling is held at nominal while the supply is
+    -- inside its window. That is what the datasheets state: the Powersoft K
+    -- draws the same watts at 230 V and 115 V and twice the amps at 115 V, so
+    -- delivered power must not track voltage or the half of the range the
+    -- amplifier is actually built for would quietly be a slower amplifier.
+    -- Outside the window the real voltage takes over again - that is what
+    -- brownout and overvoltage are for.
+    local ceilMains = (mainsState == "ok" or mainsState == "undervoltage")
+      and (NTx.AmpNominalMains() or mains) or mains
+    local vmax, rail = NTx.AmpChannelCeiling(p, ceilMains, z, st.loadFrac or 0, derate, standby, iScale)
     railAny = rail
 
     -- Constant-voltage outputs regulate to the tap and simply cannot deliver
