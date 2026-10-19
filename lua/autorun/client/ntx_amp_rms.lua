@@ -7,9 +7,10 @@
 -- draw, output watts, thermal load and speaker drive - follows the music
 -- instead of sitting on the fader positions.
 --
--- The cadence is not chosen here. The server decides, because it is the only
--- party that knows who owns an amplifier, and a client-chosen rate is a client
--- that can flood the server.
+-- The client sends whenever it has something to send and the server takes it
+-- at the server's rate. There is no negotiated rate: a handshake that can be
+-- missed leaves a client reporting at a fraction of the rate for ever, and the
+-- source was seen publishing at five hertz for exactly that reason.
 -- AddCSLuaFile is a server function. Calling it bare from a client file
 -- risks aborting the whole file if it is absent here, and everything
 -- after this line - the reporter, its Think hook, its command - would
@@ -25,36 +26,46 @@ NTx = NTx or {}
 -- input in the rig would quietly report a garbage level.
 local RMS_PROTO = 3
 
--- Seconds between reports. The server assigns the real one, but the default
--- matters: a client that never receives it used to sit at a quarter of a
--- second - four hertz - and that is exactly the rate the source was seen
--- publishing at. Sixty-sixthz is the server's tick rate, which is what the
--- server would have assigned anyway.
-local cadence = 1 / 66
-local nextCadenceReq = 0
-local nextSend = 0
+-- The client sends whenever it has something to send, and the server takes it
+-- at the server's rate. There is no negotiated rate and no fallback: a
+-- handshake that can be missed leaves a client reporting at a fraction of the
+-- rate for ever, and the source was seen publishing at five hertz because of
+-- exactly that.
+--
+-- The rate the PAGE samples at is the same one, so what the page measures and
+-- what arrives are the same thing.
+NTx.RmsInterval = 1 / 66
+
+-- Opt out of sending entirely. For a client that would rather the server
+-- used its fader-only estimate than spend the bandwidth.
+local cvSend = CreateClientConVar("ntx_amp_rms_send", "1", true, false,
+  "Send measured programme levels to the server (0 = off, the server falls back to fader positions)")
 local announced = false
 
 -- The server tells us how often to report.
 -- net.Receive, not a hypothetical AddReceiver: that is the name GMod actually
 -- has, and it is the same call every other receiver in this addon uses.
-net.Receive("NTx.AmpRmsCadence", function()
-  local secs = net.ReadFloat()
-  if secs <= 0 then return end
-  cadence = math.Clamp(secs, 0.005, 1)
-  -- Published so a page created later picks the same interval up.
-  NTx.RmsCadence = cadence
-  -- The page samples the analyser on its own timer, so it has to be told the
-  -- same interval; otherwise it reports at its old fixed 20 Hz and a tick-rate
-  -- consumer would only ever see aliased level steps.
+-- The page samples the analyser on its own timer, so it has to be given the
+-- same interval the server will read at. Without it the page reports at its
+-- own fixed rate and a tick-rate consumer only ever sees aliased level steps.
+local function applyPageInterval()
+  local secs = NTx.RmsInterval or (1 / 66)
+  NTx.RmsCadence = secs
   for _, p in pairs(NTx.WebAudio.Pages or {}) do
     if p and p.panel and IsValid(p.panel) then
-      pcall(p.panel.Call, p.panel, "ntxSetMeterInterval(" .. string.format("%.4f", cadence) .. ")")
+      pcall(p.panel.Call, p.panel, "ntxSetMeterInterval(" .. string.format("%.4f", secs) .. ")")
     end
   end
+end
+NTx.ApplyRmsPageInterval = applyPageInterval
+
+-- A page that is already open when this file loads must be told as well, not
+-- only one that appears later.
+hook.Add("InitPostEntity", "NTx.RmsPageInterval", function()
+  timer.Simple(1, applyPageInterval)
 end)
 
--- Claim (or withdraw) a cadence from the server.
+-- Claim (or withdraw) the right to report.
 local function sendReady(ready)
   announced = true
   net.Start("NTx.AmpRmsReady")
@@ -78,8 +89,7 @@ local function report()
     end
   end
   if #items == 0 then return end
-  -- How often the client actually sends, measured: the cadence the server
-  -- assigned and the rate it achieves are not the same thing.
+  -- How often the client actually sends, measured.
   local now = CurTime()
   NTx.RmsSendCount = (NTx.RmsSendCount or 0) + 1
   if not NTx.RmsSendAt or (now - NTx.RmsSendAt) >= 1 then
@@ -106,33 +116,20 @@ local lastRunning = nil
 
 hook.Add("Think", "NTx.AmpRmsReport", function()
   local running = NTx.WebAudioRunning == true
-  -- Claim (or withdraw) a cadence whenever the page comes up or dies. Polled
-  -- from Think because NTx.WebAudioRunning is a plain variable, not a hook.
+  -- Claim (or withdraw) the right to report whenever the page comes up or
+  -- dies. Polled from Think because NTx.WebAudioRunning is a plain variable,
+  -- not a hook.
   if running ~= lastRunning then
     lastRunning = running
     sendReady(running)
-    if running then
-      net.Start("NTx.AmpRmsCadenceReq")
-      net.SendToServer()
-      nextCadenceReq = CurTime() + 2
-    end
+    if running then applyPageInterval() end
     announced = true
     return
   end
   if not running then return end
-  -- Ask again periodically. The request used to be sent ONLY on a page state
-  -- change, so a client that joined with the page already up never asked and
-  -- never learned the rate - and the server only sent it when the value
-  -- changed, so asking again would not have helped either. Between them the
-  -- client could sit at its default for ever.
-  if CurTime() >= nextCadenceReq then
-    nextCadenceReq = CurTime() + 2
-    net.Start("NTx.AmpRmsCadenceReq")
-    net.SendToServer()
-  end
-  if CurTime() < nextSend then return end
-  nextSend = CurTime() + cadence
-  report()
+  -- Off means off: the server keeps its fader-only estimate and the client
+  -- stops spending the bandwidth.
+  if cvSend:GetBool() then report() end
 end)
 
 -- Debug aid: shows what the reporter is holding and how often it is sending.
@@ -144,7 +141,8 @@ concommand.Add("ntx_rms_status", function()
     if (now - r.at) < 1 then fresh = fresh + 1 end
   end
   print(string.format(
-    "[NTx] rms reporter: announced=%s cadence=%.4fs (%.1f Hz) tracked=%d fresh=%d running=%s",
-    tostring(announced), cadence, 1 / math.max(cadence, 0.001), n, fresh,
+    "[NTx] rms reporter: announced=%s send=%s interval=%.4fs (%.1f Hz) tracked=%d fresh=%d running=%s",
+    tostring(announced), tostring(cvSend:GetBool()),
+    NTx.RmsInterval or (1 / 66), 1 / math.max(NTx.RmsInterval or (1 / 66), 0.001), n, fresh,
     tostring(NTx.WebAudioRunning == true)))
 end)

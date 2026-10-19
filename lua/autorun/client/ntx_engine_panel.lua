@@ -39,6 +39,7 @@ local SERVER_OWNED = {
   ntx_max_channels = "Max BASS taps per client",
   ntx_mute_distance = "BASS hard-mute range (units)",
   ntx_update_hz = "Graph rebroadcast cap (Hz)",
+  ntx_amp_rms_send = "Send measured levels to the server (0 = off)",
   ntx_mixer_admin_only = "Mixer edits limited to admins",
 }
 

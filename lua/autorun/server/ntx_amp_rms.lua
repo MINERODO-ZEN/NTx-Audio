@@ -24,8 +24,6 @@ NTx = NTx or {}
 
 util.AddNetworkString("NTx.AmpRms")
 util.AddNetworkString("NTx.AmpRmsReady")
-util.AddNetworkString("NTx.AmpRmsCadence")
-util.AddNetworkString("NTx.AmpRmsCadenceReq")
 
 -- input entity -> { l = left 0-1, r = right 0-1, v = mono 0-1, at, by = Player }
 NTx.LiveRms = NTx.LiveRms or {}
@@ -67,10 +65,14 @@ end
 
 -- Anti-spam: a client may claim at most twice its assigned cadence, so one that
 -- ignores the assignment cannot flood the server.
+-- How close together two reports may arrive. A client sends whenever it has
+-- something to send, so this has to admit the tick rate: it used to allow
+-- twice a quarter of a second, which is eight hertz, and the server was
+-- quietly throwing away everything above that.
 local function rateOk(ply)
   local now = CurTime()
   local last = ply.__ntxRmsAt or 0
-  if now - last < (ply.__ntxRmsEvery or (tickInterval() * 4)) * 2 then return false end
+  if now - last < tickInterval() * 1.05 then return false end
   ply.__ntxRmsAt = now
   return true
 end
@@ -127,12 +129,9 @@ local function setReady(ply, ready)
   -- periodically, and it would have been told nothing if the rate had not
   -- changed since last time - so a client that missed the first one stayed on
   -- its default for ever.
-  local changed = ply.__ntxRmsEvery ~= every
-  ply.__ntxRmsEvery = every
-  net.Start("NTx.AmpRmsCadence")
-  net.WriteFloat(every)
-  net.Send(ply)
-  if not changed then return end
+  -- The cadence is gone. The client sends whenever it has something to send
+  -- and the server takes it at its own rate, so there is nothing to agree on
+  -- and nothing that can be missed.
   print(string.format("[NTx] %s will report measured levels every %.4fs (%s).",
     ply:Nick(), every,
     isOwner and "owns an amplifier" or (anyAmpOwned() and "no amplifier" or "no amplifier is owned")))
@@ -185,11 +184,6 @@ net.Receive("NTx.AmpRms", function(_, ply)
 end)
 
 -- Client asks for its cadence, on join and whenever the page state changes.
-net.Receive("NTx.AmpRmsCadenceReq", function(_, ply)
-  if not IsValid(ply) then return end
-  setReady(ply, ply.__ntxRmsReady == true)
-end)
-
 hook.Add("PlayerInitialSpawn", "NTx.AmpRmsSpawn", function(ply)
   -- The client's announce usually lands first; this covers the case where the
   -- amplifier ownership is already known by the time the player arrives.
