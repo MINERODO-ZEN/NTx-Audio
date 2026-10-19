@@ -94,6 +94,36 @@ local function mixerPageURL()
   return "https://xenonetwork.moe/dsp/webaudio.html"
 end
 
+-- Mirror of the mixer gain model, per bus (the split is real here: each tap is
+-- filtered, so MID and SUB busses genuinely diverge). Takes the bus the tap
+-- actually plays, resolved from the amplifier channel rather than the cabinet.
+-- Faders are logarithmic (NTx.FaderToGain: -60 dB .. +6 dB, unity at 1).
+local function waGain(mrec, inputEnt, playSub)
+  if not mrec or mrec.mm then return 0 end
+  local bus = playSub and "sub" or "mid"
+  if bus == "mid" and mrec.midm then return 0 end
+  if bus == "sub" and mrec.subm then return 0 end
+  local gain = NTx.FaderToGain(mrec.master) * NTx.FaderToGain(bus == "mid" and mrec.mid or mrec.sub)
+  for _, ch in ipairs(mrec.channels) do
+    if ch.input == inputEnt then
+      if ch.muted then return 0 end
+      return gain * NTx.FaderToGain(ch.fader)
+    end
+  end
+  return gain
+end
+
+local function mixerRecFor(mixerEnt)
+  for _, m in ipairs(NTx.Graph.mixers) do
+    if m.ent == mixerEnt then return m end
+  end
+  return nil
+end
+
+-- Per-speaker taps for one input: exact positions, cardioid/endfire
+-- delay+polarity for reversed SUB boxes (approximation: fixed rear delay,
+-- progressive endfire steps along the array facing), self-cardioid cones.
+-- Returns the taps plus their estimated audible energy at the listener.
 -- The SFX page is the same file with a flag on the URL, so there is no second
 -- asset to host: the mode is read by the page from its own address.
 local function sfxPageURL()
@@ -128,14 +158,36 @@ local function pushAmpSfx(listener)
     end
   end
 
-  -- How loud the programme is, so the SFX can be buried under it. The loudest
-  -- measured bus of any input is a fair stand-in for "how loud is it in here".
+  -- How loud the programme is, so the SFX can be buried under it.
+  --
+  -- The measured level is what the SOURCE is playing, before the mixer. A PA
+  -- turned down still measured loud, which buried the fan while the room was
+  -- silent. So it is scaled by what the mixer actually sends out of that bus -
+  -- the same master, bus and channel faders the audio path uses - which makes
+  -- the fan come back when the desk is pulled down.
   local prog = 0
-  for _, r in pairs(NTx.PageRms or {}) do
-    if r and r.b then
-      for i = 1, #r.b do
-        local v = tonumber(r.b[i]) or 0
-        if v > prog then prog = v end
+  for _, input in ipairs((NTx.Graph and NTx.Graph.inputs) or {}) do
+    if IsValid(input.ent) then
+      local r = NTx.PageRms["wai|" .. input.ent:EntIndex()]
+      if r and r.b then
+        local mrec = mixerRecFor(input.mixer)
+        for i = 1, #r.b do
+          local lvl = tonumber(r.b[i]) or 0
+          if mrec then
+            local isSub = NTx.BusIsSub(i - 1)
+            local g = NTx.FaderToGain(mrec.master) * NTx.FaderToGain(isSub and mrec.sub or mrec.mid)
+            if mrec.mm or (isSub and mrec.subm) or (not isSub and mrec.midm) then g = 0 end
+            for _, ch in ipairs(mrec.channels) do
+              if ch.input == input.ent then
+                g = g * NTx.FaderToGain(ch.fader)
+                if ch.muted then g = 0 end
+                break
+              end
+            end
+            lvl = lvl * g * (tonumber(input.vol) or 1)
+          end
+          if lvl > prog then prog = lvl end
+        end
       end
     end
   end
@@ -176,36 +228,6 @@ local function ensureAmpSfxPage()
   return panel
 end
 
--- Mirror of the mixer gain model, per bus (the split is real here: each tap is
--- filtered, so MID and SUB busses genuinely diverge). Takes the bus the tap
--- actually plays, resolved from the amplifier channel rather than the cabinet.
--- Faders are logarithmic (NTx.FaderToGain: -60 dB .. +6 dB, unity at 1).
-local function waGain(mrec, inputEnt, playSub)
-  if not mrec or mrec.mm then return 0 end
-  local bus = playSub and "sub" or "mid"
-  if bus == "mid" and mrec.midm then return 0 end
-  if bus == "sub" and mrec.subm then return 0 end
-  local gain = NTx.FaderToGain(mrec.master) * NTx.FaderToGain(bus == "mid" and mrec.mid or mrec.sub)
-  for _, ch in ipairs(mrec.channels) do
-    if ch.input == inputEnt then
-      if ch.muted then return 0 end
-      return gain * NTx.FaderToGain(ch.fader)
-    end
-  end
-  return gain
-end
-
-local function mixerRecFor(mixerEnt)
-  for _, m in ipairs(NTx.Graph.mixers) do
-    if m.ent == mixerEnt then return m end
-  end
-  return nil
-end
-
--- Per-speaker taps for one input: exact positions, cardioid/endfire
--- delay+polarity for reversed SUB boxes (approximation: fixed rear delay,
--- progressive endfire steps along the array facing), self-cardioid cones.
--- Returns the taps plus their estimated audible energy at the listener.
 local function buildTaps(input, mrec, listenerPos)
   listenerPos = listenerPos or Vector(0, 0, 0)
   local groups = {}

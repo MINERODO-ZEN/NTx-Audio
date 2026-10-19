@@ -564,6 +564,25 @@ function sfxEnsure(){
   C.sfx=s;
 }
 
+// How much of a source at this distance the listener actually gets. The same
+// exponential model the panner uses, so the burial below can be worked out
+// against what is really heard rather than against the raw level.
+//
+// The first version used an inverse model with a 300-unit reference distance,
+// which is a hall: a fan three thousand units away was only twenty decibels
+// down, and it carried across the map.
+var SFX_REF=48, SFX_ROLL=2.2, SFX_MAX=3000;
+// The programme level, in dBFS, at which the fan starts to be buried and the
+// level at which it is completely gone. Measured programme material sits
+// around -20 dBFS, so a working rig silences the fans.
+var SFX_QUIET=-48, SFX_LOUD=-30;
+function sfxDistanceGain(dist){
+  if(!(dist>=0)) dist=0;
+  if(dist>SFX_MAX) dist=SFX_MAX;
+  if(dist<SFX_REF) dist=SFX_REF;
+  return Math.pow(SFX_REF/dist, SFX_ROLL);
+}
+
 function sfxAmp(a){
   var s=C.sfx;
   if(!s) return;
@@ -574,7 +593,9 @@ function sfxAmp(a){
     var lp=ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=900; lp.Q.value=0.4;
     var g=ctx.createGain(); g.gain.value=0;
     var pan=ctx.createPanner();
-    pan.panningModel="HRTF"; pan.distanceModel="inverse"; pan.refDistance=300; pan.rolloffFactor=1;
+    pan.panningModel="HRTF";
+    pan.distanceModel="exponential"; pan.refDistance=SFX_REF; pan.rolloffFactor=SFX_ROLL;
+    pan.maxDistance=SFX_MAX;
     src.connect(lp); lp.connect(g); g.connect(pan); pan.connect(s.master);
     try{ src.start(ctx.currentTime); }catch(e){}
     e={src:src,lp:lp,g:g,pan:pan};
@@ -585,13 +606,33 @@ function sfxAmp(a){
   // in level.
   var rpm=Math.max(Number(a.rpm)||0,0);
   e.lp.frequency.setTargetAtTime(500+Math.min(rpm/3200,1)*1400,t,0.3);
-  var db=Number(a.db);
-  e.g.gain.setTargetAtTime(db>-100?Math.pow(10,db/20):0,t,0.3);
+
+  var x=Number(a.x)||0, y=Number(a.y)||0, z=Number(a.z)||0;
   if(e.pan.positionX){
-    e.pan.positionX.setTargetAtTime(Number(a.x)||0,t,0.05);
-    e.pan.positionY.setTargetAtTime(Number(a.y)||0,t,0.05);
-    e.pan.positionZ.setTargetAtTime(Number(a.z)||0,t,0.05);
-  }else{ try{ e.pan.setPosition(Number(a.x)||0,Number(a.y)||0,Number(a.z)||0); }catch(e){} }
+    e.pan.positionX.setTargetAtTime(x,t,0.05);
+    e.pan.positionY.setTargetAtTime(y,t,0.05);
+    e.pan.positionZ.setTargetAtTime(z,t,0.05);
+  }else{ try{ e.pan.setPosition(x,y,z); }catch(e){} }
+
+  // Two separate jobs, kept separate. WHERE it is heard is the panner's job,
+  // above. WHETHER it is heard at all is the programme's job: a fan in a rig
+  // that is working is inaudible, and one in a silent room is not.
+  //
+  // Comparing the fan's level against the programme's directly does not work:
+  // the two are on unrelated scales - one is a raw acoustic figure off the
+  // amplifier, the other is what the meter measured after the faders - so the
+  // comparison came out however it happened to fall. A threshold on the
+  // programme is the thing that actually matches the requirement.
+  var db=Number(a.db);
+  var lvl=db>-100?Math.pow(10,db/20):0;
+  // A cap, so a fan at full speed next to your ear is not deafening.
+  if(lvl>0.25) lvl=0.25;
+  // Silent below the floor, fully buried once the programme is at a working
+  // level. SFX_QUIET is the programme level at which the fan starts to go,
+  // SFX_LOUD the level at which it is completely gone.
+  var pd=C.sfx.progDb===undefined?-120:C.sfx.progDb;
+  var duck=Math.max(0,Math.min(1,1-(pd-SFX_QUIET)/(SFX_LOUD-SFX_QUIET)));
+  e.g.gain.setTargetAtTime(lvl*duck,t,0.3);
 }
 
 // The bridge. Lua pushes the amplifier list, the listener and the programme
@@ -601,12 +642,14 @@ function ntxSfx(s){
     sfxEnsure();
     if(!C.sfx) return;
     var t=C.ctx.currentTime;
+    // Known before the amplifiers are updated: the burial is worked out against
+    // both of these, and a frame of lag on them is a frame of lag on the duck.
+    var prog=Math.max(Number(s&&s.prog)||0,0);
+    C.sfx.progDb=prog>0?20*Math.log(prog)/Math.log(10):-120;
+    C.sfx.listener=(s&&s.listener)||null;
     var list=(s&&s.amps)||[];
     for(var i=0;i<list.length;i++) sfxAmp(list[i]);
     // An amplifier that has gone away must stop making noise.
-    for(var id in C.sfx.amps){
-      if(!C.sfx.amps[id].seen){ }
-    }
     for(var i=0;i<list.length;i++){ C.sfx.amps[list[i].id].seen=true; }
     for(var id in C.sfx.amps){
       if(!C.sfx.amps[id].seen){
@@ -614,14 +657,7 @@ function ntxSfx(s){
         C.sfx.amps[id].seen=false;
       }
     }
-    // Buried under the programme. The louder the music, the less of the fan
-    // reaches the listener - which is what actually happens, and what makes the
-    // fan sit in the room instead of on top of it.
-    var prog=Math.max(Number(s&&s.prog)||0,0);
-    var progDb=prog>0?20*Math.log(prog)/Math.log(10):-120;
-    var mask=progDb-(-30);
-    var duck=Math.max(0,Math.min(1,1-mask/24));
-    C.sfx.master.gain.setTargetAtTime(duck,t,0.2);
+
     // The listener, so the fan is heard from where the player is.
     if(s&&s.listener){
       var L=s.listener;
