@@ -110,9 +110,10 @@ end
 -- ------------------------------------------------------------ lookup
 
 local cache = {}
+local reportedMiss = false
 
 -- Row layout matches the generated file:
---   kind, ch, step, px, py, pz, ap, ay, ar, lr, lg, lb
+--   kind, ch, step, px, py, pz, ap, ay, ar, lr, lg, lb, size
 local function decode(row)
   local kind, ch, step = row[1], row[2], row[3]
   return {
@@ -122,6 +123,9 @@ local function decode(row)
     pos = Vector(row[4], row[5], row[6]),
     ang = Angle(row[7], row[8], row[9]),
     lens = Color(row[10] or 0, row[11] or 0, row[12] or 0),
+    -- The diameter PAC3 recorded, in model units. Zero means the layout
+    -- records none, and the lamp is drawn at its native size.
+    size = tonumber(row[13]) or 0,
   }
 end
 
@@ -136,9 +140,14 @@ function NTx.Pac3Lamps(ent)
   -- third-party pack brought. A pack is checked as well as the built-in file,
   -- so a pack model with no layout of its own falls back to nothing rather
   -- than to a built-in model's lamps.
+  --
+  -- A plain loop, not ipairs: ipairs stops at the first nil, so a table
+  -- literal holding a nil first element would silently skip every source.
   local function lookup(key, field)
     if key == "" then return nil end
-    for _, data in ipairs({ NTx.PAC3_LEDS, NTx.PackLamps }) do
+    local sources = { NTx.PAC3_LEDS, NTx.PackLamps }
+    for i = 1, #sources do
+      local data = sources[i]
       if data and data[field] and data[field][key] then return data[field][key] end
     end
     return nil
@@ -155,7 +164,21 @@ function NTx.Pac3Lamps(ent)
       if ok and lamp then lamps[#lamps + 1] = lamp end
     end
   end
-  cache[key] = lamps or false
+
+  -- Only a SUCCESS is cached. A failure used to be cached as false, and the
+  -- entity was then stuck on the virtual panel for the rest of the session: the
+  -- model and the profile arrive from the server a frame or two after the
+  -- entity does, so the first lookup could legitimately fail, and caching
+  -- that failure made it permanent.
+  if lamps then
+    cache[key] = lamps
+  else
+    if not reportedMiss then
+      reportedMiss = true
+      print(string.format("[NTx] no lamp layout for profile %q model %q (data=%s)",
+        tostring(id), tostring(model), tostring(NTx.PAC3_LEDS ~= nil)))
+    end
+  end
   return lamps
 end
 

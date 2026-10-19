@@ -607,7 +607,9 @@ local function drawPac3Lamps(ent, rec, lamps)
   -- meant. Native model scale is what PAC3 itself uses when a layout records no
   -- Size or Scale, so an unannotated lamp comes out the same size as it does in
   -- the editor.
-  local pool = lampModels(ent, #lamps, 1)
+  -- No pool-wide scale: each lamp carries its own size, and models/led.mdl is
+  -- LED_NATIVE across, so a lamp smaller than that is a fraction of the dome.
+  local pool = lampModels(ent, #lamps)
   if not pool then return end
 
   for i, lamp in ipairs(lamps) do
@@ -617,6 +619,12 @@ local function drawPac3Lamps(ent, rec, lamps)
     -- decide brightness, never hue. A lamp with no colour falls back to the
     -- unlit default so it is still a visible lens rather than nothing.
     local base = lamp.lens or OFF
+    -- The size PAC3 recorded, in model units. Drawn at native scale when the
+    -- layout records none, which is what PAC3 itself renders. It matters: a
+    -- model whose lenses are 0.175 across came out at 1.37, eight times too
+    -- big, and the lamps of a column merged into one blob.
+    local sc = (tonumber(lamp.size) or 0) > 0 and (lamp.size / LED_NATIVE) or 1
+    model:SetModelScale(sc, 0)
     model:SetPos(ent:LocalToWorld(lamp.pos))
     model:SetAngles(ent:GetAngles() + lamp.ang)
     render.MaterialOverride(ledMaterial(base, alpha))

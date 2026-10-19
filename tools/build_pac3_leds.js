@@ -49,6 +49,17 @@ const entries = (n) => (n && n.type === 'TableConstructorExpression' ? n.fields.
 const field = (n, name) => entries(n).find(([k]) => k === name);
 const lit = (v) =>
   v && v.arguments ? v.arguments.map((a) => parseFloat(a.raw || a.argument.raw)) : null;
+// A plain number, not a string literal. PAC3 stores Size as one, so the
+// string-literal reader above finds nothing and every lamp came out at zero.
+const numLit = (v) => {
+  if (!v) return 0;
+  if (v.type === "NumericLiteral") return v.value;
+  if (v.arguments && v.arguments[0]) {
+    const a = v.arguments[0];
+    return parseFloat(a.raw || a.value || 0) || 0;
+  }
+  return 0;
+};
 const str = (v) => (v && v.raw ? String(v.raw).replace(/^["']|["']$/g, '') : null);
 
 // Lamp names come in two spellings. The original packs the channel onto the
@@ -114,6 +125,7 @@ function parseFile(file) {
               pos: lit(f.Position) || [0, 0, 0],
               ang: lit(f.Angles) || [0, 0, 0],
               col: lit(f.Color) || [0, 0, 0],
+              size: numLit(f.Size),
             });
           }
         } else {
@@ -165,7 +177,8 @@ if (PACK_MODE) {
       [l.kind, l.ch === null ? 0 : l.ch, l.step === null || l.step === undefined ? 0 : l.step,
         jnum(l.pos[0]), jnum(l.pos[1]), jnum(l.pos[2]),
         jnum(l.ang[0]), jnum(l.ang[1]), jnum(l.ang[2]),
-        Math.round(l.col[0] * 255), Math.round(l.col[1] * 255), Math.round(l.col[2] * 255)]
+        Math.round(l.col[0] * 255), Math.round(l.col[1] * 255), Math.round(l.col[2] * 255),
+        jnum(l.size || 0)]
   );
   const out = {
     byModel: { [model]: rows },
@@ -208,7 +221,8 @@ for (const f of files) {
         `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ${l.step === null || l.step === undefined ? 0 : l.step}, ` +
         `${num(l.pos[0])}, ${num(l.pos[1])}, ${num(l.pos[2])}, ` +
         `${num(l.ang[0])}, ${num(l.ang[1])}, ${num(l.ang[2])}, ` +
-        `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)} },`
+        `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)}, ` +
+        `${num(l.size || 0)} },`
     )
     .join('\n');
 
@@ -232,7 +246,8 @@ function emitTable(t) {
           `      { ${q(l.kind)}, ${l.ch === null ? 0 : l.ch}, ${l.step === null || l.step === undefined ? 0 : l.step}, ` +
           `${num(l.pos[0])}, ${num(l.pos[1])}, ${num(l.pos[2])}, ` +
           `${num(l.ang[0])}, ${num(l.ang[1])}, ${num(l.ang[2])}, ` +
-          `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)} },`
+          `${Math.round(l.col[0] * 255)}, ${Math.round(l.col[1] * 255)}, ${Math.round(l.col[2] * 255)}, ` +
+        `${num(l.size || 0)} },`
       )
       .join('\n');
     return `    [${q(k)}] = {\n${rows}\n    },`;
@@ -248,13 +263,17 @@ const out = `-- GENERATED FILE - DO NOT EDIT BY HAND.
 -- load:
 --   1 kind      lamp name with any channel digits stripped ("signal", "odep")
 --   2 channel   trailing digit from the lamp name, 0 when it has none
---   3,4,5 position   model space, x y z
---   6,7,8 rotation   degrees, pitch yaw roll
---   9,10,11 lens tint 0-255, used only while the lamp is dark
+--   3 step      ladder step, 0 when it has none
+--   4,5,6 position   model space, x y z
+--   7,8,9 rotation   degrees, pitch yaw roll
+--   10,11,12 lens tint 0-255, used only while the lamp is dark
+--   13 size     diameter in model units, 0 when the layout records none
 --
--- Everything is written exactly as PAC3 stored it. Size and Scale are not
--- baked: the game draws the lamp at native model scale, which is what PAC3
--- itself renders when a layout leaves them at their defaults.
+-- Everything is written exactly as PAC3 stored it. The size IS baked, because
+-- a layout that records one means it: drawn at native scale instead, the lamps
+-- of a model with small lenses came out eight times too big and merged into
+-- blobs. PAC3's Scale is still not applied - it is a multiplier on the model
+-- rather than a size, and no layout here uses it.
 NTx = NTx or {}
 
 -- Two lookup keys. The game tries byProfile[profile id] first and falls back
