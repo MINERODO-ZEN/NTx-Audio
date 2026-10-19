@@ -312,10 +312,19 @@ end
 -- way, and it needs no class file at all.
 function NTx.RegisterAmpVariant(class, spec)
   if scripted_ents.GetStored(class) then return false end
-  local base = scripted_ents.GetStored("ntx_amplifier")
-  if not base or not base.t then return false end
+  -- The base hands its table over at the end of its own file, because that is
+  -- the only moment it is complete: shared.lua is included at the top of the
+  -- file and the Initialize is added after it. scripted_ents.GetStored is the
+  -- fallback, and it is empty at that point - the engine registers the base
+  -- class only after the file returns.
+  local base = NTx.AmpBaseTable
+  if not base then
+    local stored = scripted_ents.GetStored("ntx_amplifier")
+    base = stored and stored.t or nil
+  end
+  if not base then return false end
   local ENT = {}
-  for k, v in pairs(base.t) do
+  for k, v in pairs(base.t or base) do
     ENT[k] = istable(v) and table.Copy(v) or v
   end
   ENT.Type = "anim"
@@ -356,6 +365,23 @@ function NTx.RegisterAmpVariants()
   -- printed its own count would say "0" after the real one.
   if n > 0 then
     print(string.format("[NTx] %d amplifier variant(s) registered.", n))
+    -- What each class actually ended up with. Every failure in this area has
+    -- been the same shape: the class existed and was missing something from
+    -- the base - no Initialize, no profile, no lamps, no menu entry - and the
+    -- symptom pointed somewhere else entirely. This says it in one line.
+    for _, id in ipairs(NTx.AmpProfileIds()) do
+      local p = NTx.AmpProfile(id)
+      if p and p.variant then
+        local class = p.entityClass or ("ntx_ampvar_" .. id)
+        local t = scripted_ents.GetStored(class)
+        local tab = t and t.t or nil
+        print(string.format("[NTx]   %-22s cat=%-22s profile=%-6s init=%s setup=%s menu=%s",
+          class, tostring(p.category), id,
+          tostring(tab and tab.Initialize ~= nil),
+          tostring(tab and tab.SetupDataTables ~= nil),
+          tostring(list.HasEntry("SpawnableEntities", class))))
+      end
+    end
   end
   return n
 end

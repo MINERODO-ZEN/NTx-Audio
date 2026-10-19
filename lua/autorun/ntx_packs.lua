@@ -137,10 +137,11 @@ end
 -- Registering on the server and the client independently is deliberate. The
 -- class name is the same in both, and the profile travels as a string, so
 -- nothing has to be sent over the wire for the client to draw the right face.
--- A fallback. The variants are normally registered at the end of the base
--- amplifier's own file, because the spawn menu takes its list of entity
--- classes once and anything registered later is not in it. This runs in case
--- that did not happen, and registers nothing if it did.
+-- A fallback. The variants are registered at the end of the base amplifier's
+-- own file, because the spawn menu takes its list of entity classes once and
+-- anything registered later is not in it - and because that is the only moment
+-- the base's table is complete. This runs in case that did not happen, and
+-- registers nothing if it did.
 hook.Add("InitPostEntity", "NTx.AmpVariants", function()
   NTx.RegisterAmpVariants()
 end)

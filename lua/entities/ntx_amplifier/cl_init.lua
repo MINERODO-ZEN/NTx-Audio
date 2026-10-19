@@ -21,6 +21,9 @@ function ENT:Initialize()
 end
 
 -- The variant classes, on the client as well as the server: the client needs
--- the class registered to draw the model, the lamps and the panel. At the end
--- of this file, so the copy of the base's table is complete.
+-- the class registered to draw the model, the lamps and the panel.
+--
+-- The client has its own table for the base - the one built from cl_init.lua
+-- rather than init.lua - so it hands that over rather than the server's.
+NTx.AmpBaseTable = ENT
 if NTx.RegisterAmpVariants then NTx.RegisterAmpVariants() end

@@ -183,9 +183,16 @@ end
 
 -- The variant classes, registered HERE and not at InitPostEntity.
 --
--- The spawn menu takes its list of entity classes once, and InitPostEntity is
--- after that: registering there produced classes the menu never saw, and the
--- Powersoft tab simply was not there. This is the end of the base's own file,
--- so the copy taken of it is complete - which is the whole reason the
--- variants are copies and not derivations.
+-- Two things make this the right moment. The spawn menu takes its list of
+-- entity classes once, and InitPostEntity is after that - registering there
+-- produced classes the menu never saw, and the Powersoft tab simply was not
+-- there. And this is the end of the base's own file, so the table handed on
+-- is complete: shared.lua is included at the top of the file, and the
+-- Initialize below is added after it.
+--
+-- The table is handed over rather than looked up. The engine registers the
+-- base class only after this file returns, so scripted_ents.GetStored finds
+-- nothing here - which is why an earlier version registered nothing at all
+-- and fell back to InitPostEntity, too late for the menu.
+NTx.AmpBaseTable = ENT
 if NTx.RegisterAmpVariants then NTx.RegisterAmpVariants() end
