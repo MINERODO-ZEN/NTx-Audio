@@ -619,11 +619,12 @@ local function drawPac3Lamps(ent, rec, lamps)
     -- decide brightness, never hue. A lamp with no colour falls back to the
     -- unlit default so it is still a visible lens rather than nothing.
     local base = lamp.lens or OFF
-    -- The size PAC3 recorded, in model units. Drawn at native scale when the
+    -- The size PAC3 recorded is a scale modifier for the lamp model, not a
+    -- diameter, so it is applied as it stands. Drawn at native scale when the
     -- layout records none, which is what PAC3 itself renders. It matters: a
-    -- model whose lenses are 0.175 across came out at 1.37, eight times too
+    -- layout scaled to 0.175 drawn at native came out nearly six times too
     -- big, and the lamps of a column merged into one blob.
-    local sc = (tonumber(lamp.size) or 0) > 0 and (lamp.size / LED_NATIVE) or 1
+    local sc = (tonumber(lamp.size) or 0) > 0 and lamp.size or 1
     model:SetModelScale(sc, 0)
     model:SetPos(ent:LocalToWorld(lamp.pos))
     model:SetAngles(ent:GetAngles() + lamp.ang)
