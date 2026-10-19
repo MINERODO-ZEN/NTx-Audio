@@ -228,7 +228,10 @@ for _, spec in ipairs({
     -- Current limit straight off the sheet: the published peak output current,
     -- as RMS. AmpChannelCeiling multiplies this by the load to get a voltage
     -- ceiling, so it has to be an ampere figure and not a peak one.
-    ilim = math.Round(spec.apeak / math.Sqrt(2), 1),
+    -- math.sqrt, not math.Sqrt: GLua's math library is lowercase and the
+    -- capitalised spelling is nil, which aborts this file and takes every
+    -- profile with it.
+    ilim = math.Round(spec.apeak / math.sqrt(2), 1),
     -- Default to the 32 dB setting, the middle of the four.
     sens = spec.sens[3],
     sensOptions = spec.sens,

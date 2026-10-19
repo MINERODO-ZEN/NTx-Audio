@@ -6,7 +6,8 @@
 -- entity is created with it applied before it is handed over.
 if not SERVER then return end
 
-AddCSLuaFile("ntx_amp_spawnmenu.lua")
+-- lua/autorun/*.lua is sent to clients automatically, so the client half
+-- needs no AddCSLuaFile here.
 
 local SPAWN_OFFSET = 8
 

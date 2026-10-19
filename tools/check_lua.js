@@ -59,6 +59,17 @@ const GLUA_BANNED = [
   [/<<|>>/, "shift operator (use bit.lshift / bit.rshift)"],
   [/&&|\|\|/, "logical operator (use and / or)"],
   [/(^|[^%w])[^%w=~][01]\s*\/\/[^\/]/, "C-style comment (use --)"],
+  // GLua's math library is lowercase. The capitalised spelling is nil, and
+  // calling it aborts the whole file at load time - which cost the whole
+  // Powersoft profile table once, because the failure surfaced as "no
+  // amplifiers in the spawn menu" rather than as a typo.
+  //
+  // Clamp, Round and Random are deliberately absent: those really are
+  // capitalised in GLua.
+  [
+    /math\.(Sqrt|Abs|Floor|Ceil|Max|Min|Pow|Log|Log10|Sin|Cos|Tan|Sinh|Cosh|Tanh|Atan|Atan2|Asin|Acos|Exp|Fmod|Modf|Frexp|Ldexp|Huge|Pi|Deg|Rad)(?![A-Za-z0-9_])/,
+    "capitalised math name (GLua's are lowercase: math.sqrt, math.abs, ...)",
+  ],
 ];
 
 // Server-only globals. Calling one from a file under lua/autorun/client/ is a
