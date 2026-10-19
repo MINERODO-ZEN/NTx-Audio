@@ -22,6 +22,15 @@ function ENT:Initialize()
   self.WireSignal = {}
   self.WireLevelsOut = {}
   if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
+  -- Wrapped, not replaced: InstallWireHooks already owns the rebuild trigger.
+  -- PowerIn latches because a wire only fires on change, so it needs an unlink
+  -- to let go - otherwise a pulled cable is indistinguishable from a closed
+  -- contactor and the amplifier stays dead.
+  local prevUnlink = self.OnInputWireUnlink
+  self.OnInputWireUnlink = function()
+    self:SetPowerWire(0)
+    if prevUnlink then prevUnlink() end
+  end
   self.Injected = ""
   NTx.Amplifiers[self] = true
 end
@@ -71,10 +80,13 @@ end
 function ENT:TriggerInput(name, value)
   self.WireMains = self.WireMains or {}
   local v = tonumber(value) or 0
-  if name == "MainsV" then
+  if name == "PowerIn" then
+    -- Latched, like a real switch: a wire only fires on change, so holding the
+    -- value is what makes a latching contactor behave. Reset to 0 when the
+    -- wire comes out, or unplugging would leave the amplifier off forever.
+    self:SetPowerWire(v > 0.5 and 1 or 2)
+  elseif name == "MainsV" then
     self.WireMains.v = v
-  elseif name == "MainsA" then
-    self.WireMains.a = v
   elseif name == "MainsHz" then
     self.WireMains.hz = v
   else

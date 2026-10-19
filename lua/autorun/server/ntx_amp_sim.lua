@@ -182,7 +182,10 @@ local function stepAmp(amp, now, dt)
   local mains = amp:MainsVoltage(NTx.AmpNominalMains())
   local mainsState = NTx.AmpMainsState(p, mains, NTx.AmpNominalMains(), amp:GetPFC())
   local injected = amp.Injected or ""
-  local powered = amp:GetPower() == true and not amp:GetBlown()
+  -- PowerIn, when wired, overrides the panel switch; unwired the switch
+  -- decides. Either way a burnt amplifier is never powered.
+  local powered = (amp.RunState and amp:RunState() or amp:GetPower() == true)
+    and not amp:GetBlown()
 
   -- Lockout: outside the supply's window the PSU stops trying. Mains-lockout is
   -- the difference between "the rig is quiet for a minute" and "it is dead".
@@ -491,7 +494,7 @@ local function stepAmp(amp, now, dt)
   -- Fan noise. Mains hum is gone entirely: no synthesis, no convar, no
   -- NetworkVars, nothing left to drive it.
   st.fanDb = -120
-  if amp:GetFanNoise() and amp:GetFanOn() and amp:GetPower() and not amp:GetBlown() then
+  if amp:GetFanNoise() and amp:GetFanOn() and amp:RunState() and not amp:GetBlown() then
     st.fanDb = math.Clamp((amp:GetFanNoiseDb() or -120) + 26 * (st.fan or 0), -120, 0)
   end
 end

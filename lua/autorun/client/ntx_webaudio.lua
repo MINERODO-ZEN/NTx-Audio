@@ -603,10 +603,12 @@ hook.Add("Think", "NTx.WebAudioThink", function()
     if NTx.PageBroken[input.ent] then continue end
     local mrec = mixerRecFor(input.mixer)
     if not mrec then continue end
-    -- No audible taps: don't hold a page open. The cleanup sweep below
-    -- closes any existing page, so a muted mixer is truly silent.
+    -- The page stays open even with no audible taps. The band analysers hang
+    -- off the source splitter, not off cabinet chains, so with every amplifier
+    -- off or every cabinet out of range the page is still measuring and still
+    -- reporting - which is the whole reason to keep it open. Closing it here
+    -- meant a switched-off rig reported nothing and came back blind.
     local taps, energy = buildTaps(input, mrec, ep)
-    if #taps == 0 then continue end
     local pkey = "wai|" .. input.ent:EntIndex()
     seen[pkey] = true
     count = count + 1

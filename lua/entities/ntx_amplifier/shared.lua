@@ -64,6 +64,10 @@ function ENT:SetupDataTables()
   -- from a channel genuinely wired to MidL. Without this the client would treat
   -- every unwired amplifier as MID and play a SUB cabinet's bus as MID.
   self:NetworkVar("Int", 7, "ChannelFed")
+  -- 0 = nothing on the PowerIn pin, 1 = a wire says on, 2 = a wire says off.
+  -- Encoded so 0 is the useful default: a NetworkVar that starts meaning "off"
+  -- would show every amplifier dead until something was wired to it.
+  self:NetworkVar("Int", 8, "PowerWire")
   self:NetworkVar("Bool", 4, "Power", { KeyName = "amppower", Edit = { type = "Boolean", order = 1, category = "NTx Amp Sim" } })
   self:NetworkVar("Bool", 5, "FanOn", { KeyName = "ampfanon", Edit = { type = "Boolean", order = 2, category = "NTx Amp Sim" } })
   self:NetworkVar("Bool", 6, "Standby", { KeyName = "ampstand", Edit = { type = "Boolean", order = 3, category = "NTx Amp Sim" } })
@@ -184,9 +188,14 @@ function ENT:CreateWirePorts()
       "Level and bus identifier into channel " .. i .. " [level, id]")
   end
   -- Numeric telemetry, NORMAL type, so external wiring can reach them.
+  -- MainsA went: TriggerInput stored it and nothing ever read it. The MainsA
+  -- OUTPUT below is separate and live - that is the measured draw.
   add(inNames, inDesc, "MainsV", "Mains voltage, volts RMS")
-  add(inNames, inDesc, "MainsA", "Mains current, amperes")
   add(inNames, inDesc, "MainsHz", "Mains frequency, hertz")
+  -- A switch or contactor on this pin runs the amplifier. NORMAL, not NTXSIG,
+  -- so an ordinary NORMAL output can drive it. Unwired, the amplifier falls
+  -- back to its own Power setting.
+  add(inNames, inDesc, "PowerIn", "Run the amplifier: 1 on, 0 off. Unwired uses Power")
 
   for i = 1, n do
     add(outNames, outDesc, "Ch" .. i .. "Out", "Output signal level on channel " .. i .. ", 0 to 1")
@@ -217,6 +226,15 @@ function ENT:CreateWirePorts()
   local inOv = {}
   for i = 1, n do inOv[i] = "ARRAY" end
   NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, n, n, nil, inOv)
+end
+
+-- Is the amplifier running? A PowerIn wire wins while it is connected; with
+-- nothing on that pin the amplifier's own Power setting decides.
+function ENT:RunState()
+  local w = self:GetPowerWire() or 0
+  if w == 1 then return true end
+  if w == 2 then return false end
+  return self:GetPower() == true
 end
 
 -- The bus this channel is fed, derived from the identifier the mixer publishes

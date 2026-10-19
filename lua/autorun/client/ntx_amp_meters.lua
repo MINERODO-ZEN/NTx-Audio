@@ -345,7 +345,10 @@ function NTx.DrawAmpPanel(ent, opts)
   ledsOn = ledsOn == nil or ledsOn:GetBool()
   local style = math.floor(tonumber(ent:GetMeters()) or 0)
   local blown = ent:GetBlown() == true
-  local powered = ent:GetPower() == true and not blown
+  -- RunState, not the panel switch: a PowerIn wire drives this, and reading
+  -- the switch here would show a wire-powered amplifier as dead on the meter
+  -- while the simulation runs it.
+  local powered = ent:RunState() and not blown
 
   -- Power / enable lamp, left edge.
   if ledsOn then
@@ -524,7 +527,7 @@ local function ledPoints(ent, rec)
   local W = NTx.AMP_PANEL_W
   local style = math.floor(tonumber(ent:GetMeters()) or 0)
   local blown = ent:GetBlown() == true
-  local powered = ent:GetPower() == true and not blown
+  local powered = ent:RunState() and not blown
 
   -- Power lamp, left edge; standby breathes instead of going dark.
   local power = powered and 255 or 0
@@ -714,7 +717,7 @@ end
 function NTx.AmpExtras(ent, isHost)
   local rec = NTx.AmpRecord(ent)
   if not rec or not isHost then return nil end
-  if rec.blown or not ent:GetPower() then return nil end
+  if rec.blown or not ent:RunState() then return nil end
   return {
     fan = { db = rec.fanDb or -120, rpm = rec.fanrpm or 0 },
   }

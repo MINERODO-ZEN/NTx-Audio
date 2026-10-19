@@ -30,7 +30,7 @@ local KINDS = {}
 
 -- Whole-amplifier lamps.
 KINDS.power = function(ent)
-  if ent:GetPower() and not ent:GetBlown() then
+  if ent:RunState() and not ent:GetBlown() then
     -- Standby breathes rather than going dark, same as the panel.
     if ent:GetStandby() then
       return (math.floor(CurTime() * 1.5) % 2 == 0) and 90 or 0
@@ -148,6 +148,12 @@ end
 -- Evaluate one lamp for this frame: returns brightness 0-255 only. The colour
 -- is whatever PAC3 recorded, so nothing here picks a hue.
 function NTx.Pac3LampState(ent, lamp, rec)
+  -- Powered down means every lamp is dark, whatever its kind. Checked here
+  -- rather than in each kind so a lamp added later cannot forget. RunState
+  -- rather than the panel switch, so a PowerIn wire puts the lamps out too, and
+  -- NOT on Blown: a burnt amplifier still shows its fault lamp while powered,
+  -- which is the whole point of that lamp.
+  if not ent:RunState() then return 0 end
   local fn = KINDS[lamp.kind]
   if not fn then return 0 end
   local ok, alpha = pcall(fn, ent, lamp.ch, rec)
