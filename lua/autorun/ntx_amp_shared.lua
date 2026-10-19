@@ -11,6 +11,34 @@
 -- load time here - only from inside functions, which run long after both.
 NTx = NTx or {}
 
+-- The fields the simulation and the panels read off a profile. A profile
+-- missing one is a crash waiting for the first tick, and the check is here
+-- because a profile is assembled from a shared template and a per-model
+-- literal: naming every field in one place is how two of them got dropped
+-- already, silently, and the symptom each time was something else entirely.
+NTx.AMP_PROFILE_FIELDS = {
+  "id", "name", "model", "body", "channels", "class", "power", "ratedLoad",
+  "minLoad", "ilim", "sens", "psu", "standbySwing", "mainsWin",
+  "mainsSwallow", "pfFull", "pfIdle", "eta", "idleW", "fan", "thermal",
+  "tau", "modes", "zmin", "ratedW", "clipHold", "crestDb", "robust",
+  "snrDb", "thdPct", "hiz", "stock", "variant", "category",
+}
+
+-- Names what is missing rather than letting it fail later. Returns true when
+-- the profile is complete.
+function NTx.CheckAmpProfile(id, p)
+  if not p then return false end
+  local missing = {}
+  for _, k in ipairs(NTx.AMP_PROFILE_FIELDS) do
+    if p[k] == nil then missing[#missing + 1] = k end
+  end
+  if #missing == 0 then return true end
+  print(string.format("[NTx] amplifier profile '%s' is missing %s", id,
+    table.concat(missing, ", ")))
+  return false
+end
+
+
 -- ---------------------------------------------------------------- level model
 
 -- 0 dBFS is a full-scale digital sine, which every mixer we care about maps to
@@ -267,32 +295,6 @@ function NTx.AmpProfile(id)
   return NTx.AmpProfiles[tostring(id or "")] or nil
 end
 
--- The fields the simulation and the panels read off a profile. A profile
--- missing one is a crash waiting for the first tick, and the check is here
--- because a profile is assembled from a shared template and a per-model
--- literal: naming every field in one place is how two of them got dropped
--- already, silently, and the symptom each time was something else entirely.
-NTx.AMP_PROFILE_FIELDS = {
-  "id", "name", "model", "body", "channels", "class", "power", "ratedLoad",
-  "minLoad", "ilim", "sens", "psu", "standbySwing", "mainsWin",
-  "mainsSwallow", "pfFull", "pfIdle", "eta", "idleW", "fan", "thermal",
-  "tau", "modes", "zmin", "ratedW", "clipHold", "crestDb", "robust",
-  "snrDb", "thdPct", "hiz", "stock", "variant", "category",
-}
-
--- Names what is missing rather than letting it fail later. Returns true when
--- the profile is complete.
-function NTx.CheckAmpProfile(id, p)
-  if not p then return false end
-  local missing = {}
-  for _, k in ipairs(NTx.AMP_PROFILE_FIELDS) do
-    if p[k] == nil then missing[#missing + 1] = k end
-  end
-  if #missing == 0 then return true end
-  print(string.format("[NTx] amplifier profile '%s' is missing %s", id,
-    table.concat(missing, ", ")))
-  return false
-end
 
 -- Register a spawnable entity class for one amplifier profile.
 --
