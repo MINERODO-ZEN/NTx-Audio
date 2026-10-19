@@ -3,6 +3,11 @@ AddCSLuaFile()
 if not SERVER then return end
 
 NTx = NTx or {}
+
+-- Wire format of NTx.GraphSync. Bumped whenever the record changes shape; a
+-- client that does not recognise it keeps its last good graph instead of
+-- decoding a stream it has lost track of.
+NTx.GRAPH_PROTO = 2
 NTx.Mixers = NTx.Mixers or {}
 
 util.AddNetworkString("NTx.GraphSync")
@@ -80,7 +85,7 @@ function NTx.CollectGraph()
       local chs = {}
       for _, ch in ipairs(mixer.Channels or {}) do
         if IsValid(ch.Input) then
-          chs[#chs + 1] = { input = ch.Input, fader = ch.Fader, muted = ch.Muted, label = ch.Label, buses = ch.Buses }
+          chs[#chs + 1] = { input = ch.Input, fader = ch.Fader, muted = ch.Muted, label = ch.Label }
         end
       end
       g.mixers[#g.mixers + 1] = {
@@ -100,7 +105,13 @@ function NTx.BroadcastGraph(target)
   if now - lastBroadcast < 1 / GetConVar("ntx_update_hz"):GetFloat() then return end
   lastBroadcast = now
   local g = NTx.CollectGraph()
+  -- Format marker. The channel record changed shape twice in a row, and a
+  -- stale client reading a field that is no longer sent desynchronises the
+  -- whole message: every mixer after the first channel decodes as garbage.
+  -- Each net message is self-contained, so refusing an unknown format leaves
+  -- the client on its last good graph instead of a corrupted one.
   net.Start("NTx.GraphSync")
+  net.WriteUInt(NTx.GRAPH_PROTO, 8)
   net.WriteUInt(#g.inputs, 8)
   for _, i in ipairs(g.inputs) do
     net.WriteEntity(i.ent)
@@ -147,7 +158,6 @@ function NTx.BroadcastGraph(target)
       net.WriteFloat(ch.fader)
       net.WriteBool(ch.muted)
       net.WriteString(string.sub(ch.label or "", 1, 24))
-      net.WriteUInt(math.Clamp(math.floor(tonumber(ch.buses) or 0), 0, 255), 8)
     end
   end
   if target then net.Send(target) else net.Broadcast() end
@@ -712,8 +722,6 @@ net.Receive("NTx.MixerEdit", function(_, ply)
     ch.Label = string.sub(label or "", 1, 24)
     -- Which bus/side this channel feeds. Read last so an older client that
     -- stops after the label leaves the existing value alone.
-    -- One bit per bus, all five set by default.
-    ch.Buses = math.Clamp(net.ReadUInt(8), 1, 255)
   elseif kind == "unlink" then
     local input = net.ReadEntity()
     if IsValid(input) then

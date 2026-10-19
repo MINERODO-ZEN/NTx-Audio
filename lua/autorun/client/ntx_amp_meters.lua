@@ -217,13 +217,20 @@ function NTx.AmpChannelMeter(ent, ch)
   linDb = c.cmdDb or linDb
   local mixer = ent.GetMixer and ent:GetMixer()
   local bus = c.sub and "sub" or "mid"
+  local busId = (ent.ChannelBusId and ent:ChannelBusId(ch)) or NTx.BUS_MIDL
   if IsValid(mixer) and anyRms(mixer, bus) then
     local energy = 0
     for _, input in ipairs((NTx.Graph and NTx.Graph.inputs) or {}) do
       local g = inputGain(input.ent, mixer, bus)
       if g then
         local r = NTx.PageRms["wai|" .. input.ent:EntIndex()]
-        local rms = (r and r.at and (CurTime() - r.at) < 1) and r.v
+        -- This channel's OWN bus. The page reports one level per bus, each
+        -- already band-limited, so reading a single shared figure would put the
+        -- same number on MidL, MidR and SubMono alike. r.v was that shared
+        -- figure and stopped existing when the page went per-bus, which zeroed
+        -- this path and parked every meter at silence.
+        local rms = (r and r.at and (CurTime() - r.at) < 1)
+          and (tonumber(r.b and r.b[busId + 1]) or 0)
           or NTx.AmpVoltRatio(cvRmsDb:GetFloat())
         energy = energy + (g * rms) * (g * rms)
       end

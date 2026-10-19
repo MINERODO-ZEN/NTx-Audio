@@ -54,19 +54,6 @@ function ENT:TriggerInput(name, value)
   self.WireLevels[n] = buses
 end
 
--- Which buses one mixer channel feeds, as a bitmask rather than a single id.
---
--- A stereo source belongs on MidL AND MidR - each side carrying its own level -
--- not on one bus with the other three left dead. With one bus per channel a
--- patched source fed exactly one output and the rest of the mixer sat silent,
--- which is what made "every output is wired to an amp" still produce nothing.
-local function channelFeeds(ch, bus)
-  if not ch then return false end
-  local mask = tonumber(ch.Buses)
-  if not mask then return false end
-  return bit.band(mask, bit.lshift(1, math.floor(tonumber(bus) or 0))) ~= 0
-end
-
 -- Level of one bus/side, summed in energy across the channels assigned to it.
 -- Master and bus faders and mutes apply here, exactly as the client gain path
 -- does, so the level the amplifier sees is the level its cabinets are fed.
@@ -78,20 +65,22 @@ function ENT:ComputeBusOut(bus)
   local busFader = isSub and self:GetSubFader() or self:GetMidFader()
   local base = NTx.FaderToGain(self:GetMasterFader()) * NTx.FaderToGain(busFader)
 
+  -- Every channel feeds every bus: whatever comes out of the player into a
+  -- mixer input goes out on all five. What separates them is not the routing
+  -- but the slot each one reads - src[bus + 1] - so MidL gets the left side,
+  -- MidR the right, and SubMono their band-limited sum.
   local energy = 0
   for _, ch in ipairs(self.Channels or {}) do
-    if channelFeeds(ch, bus) then
-      local idx = nil
-      -- The channel's own position in the array of inputs, not its list index.
-      for i = 1, (NTx.WIRE_MAX_MIX_CH or 16) do
-        if NTx.WireUpstream(self, "In" .. i) == ch.Input then idx = i break end
-      end
-      local src = idx and (self.WireLevels or {})[idx]
-      local lvl = istable(src) and (tonumber(src[bus + 1]) or 0) or 0
-      local g = ch.Muted and 0 or (base * NTx.FaderToGain(ch.Fader))
-      local e = g * lvl
-      energy = energy + e * e
+    local idx = nil
+    -- The channel's own position in the array of inputs, not its list index.
+    for i = 1, (NTx.WIRE_MAX_MIX_CH or 16) do
+      if NTx.WireUpstream(self, "In" .. i) == ch.Input then idx = i break end
     end
+    local src = idx and (self.WireLevels or {})[idx]
+    local lvl = istable(src) and (tonumber(src[bus + 1]) or 0) or 0
+    local g = ch.Muted and 0 or (base * NTx.FaderToGain(ch.Fader))
+    local e = g * lvl
+    energy = energy + e * e
   end
   return math.Clamp(math.sqrt(energy), 0, 2)
 end
@@ -140,11 +129,8 @@ function ENT:EnsureChannel(input)
   if #self.Channels >= MAX_CHANNELS then return nil end
   -- Bus this channel feeds, as a bus id (MidL/MidR/SubL/SubR). Defaults to
   -- MID left; set from the mixer panel.
-  -- Every bus by default. A source patched into the mixer is expected to feed
-  -- the rig; each bus reads its own measured slot, so "all" gives five
-  -- genuinely different levels rather than five copies of one. Untick the ones
-  -- a source should not reach.
-  local ch = { Input = input, Fader = 1, Muted = false, Label = "", Buses = 31 }
+
+  local ch = { Input = input, Fader = 1, Muted = false, Label = "" }
   self.Channels[#self.Channels + 1] = ch
   return ch
 end

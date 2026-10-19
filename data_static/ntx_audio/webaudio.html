@@ -62,6 +62,9 @@ var AC=window.AudioContext||window.webkitAudioContext;
   // keep working.
   C.split.connect(C.mono,0,0); C.split.connect(C.mono,1,0);
   buildBands();
+  // ~60 Hz. The timer only OFFERS a sample; RMS_GATE decides whether one is
+  // reported, so changing the cadence never has to rebuild this.
+  if(!C.rmsIv){ C.rmsIv=setInterval(reportBands,16); }
   // Limiter after the sum: N full-scale streams summing to >0 dBFS clip in
   // the destination and distort. Normalisation handles the steady-state
   // sum; this catches the transients that slip through it.
@@ -174,6 +177,44 @@ function ntxPing(){ ntxReport({t:"pong"}); }
 // needs every tick, anyone else is fine at a quarter of that. Reporting
 // faster than the consumer can use is wasted bridge traffic, and slower than
 // it needs makes the model lag the music.
+// Band-limited source sampler, on its own timer.
+//
+// This used to run inside ntxUpdate, which only fires when Lua pushes state -
+// capped by ntx_push_hz, 15 Hz by default. The server assigns a per-player
+// cadence and pushes it here as RMS_GATE, but a gate cannot raise the ceiling:
+// the sample simply never happened between pushes. The simulation inherits
+// that cap because it consumes these numbers, so meters and load followed the
+// music at 15 Hz no matter what cadence was set.
+//
+// RMS_GATE still decides when to actually report, so ntxSetMeterInterval keeps
+// working and the timer is not rebuilt when the cadence changes.
+var BAND_KEYS=["midL","midR","subL","subR","subMono"];
+function analyserRms(an){
+  var b=new Uint8Array(an.fftSize), q=0;
+  an.getByteTimeDomainData(b);
+  for(var z=0;z<b.length;z++){ var dv=b[z]-128; q+=dv*dv; }
+  return Math.sqrt(q/b.length)/128;
+}
+function reportBands(){
+  try{
+    if(!C.ctx||!C.band) return;
+    if(!C.audio||C.audio.readyState<=1||C.audio.paused||C.audio.currentTime<=0.5) return;
+    if(C.lastRmsAt&&(C.ctx.currentTime-C.lastRmsAt)<=RMS_GATE) return;
+    C.lastRmsAt=C.ctx.currentTime;
+    var bv=[];
+    for(var i=0;i<BAND_KEYS.length;i++){
+      var an=C.band[BAND_KEYS[i]];
+      bv.push(an?Math.round(analyserRms(an)*1000)/1000:0);
+    }
+    // One level per BUS, in bus order, each already band-limited: this is what
+    // the amplifier's load and meters read, so it has to carry the same shape
+    // as the buses themselves. A MID channel is measured from the MID band,
+    // not from the whole programme.
+    ntxReport({t:"rms",b:bv,c:C.clipSeen||0});
+    C.clipSeen=0;
+  }catch(e){}
+}
+
 var RMS_GATE=0.05;
 function ntxSetMeterInterval(secs){
   var s=parseFloat(secs);
@@ -468,31 +509,7 @@ function ntxUpdate(s){
   if(gsum<=0.001){ C.checks=0; C.zeroWins=0; C.tsum=0; C.tsq=0; C.tn=0; }
   else try{
     if(C.audio&&C.audio.readyState>1&&!C.audio.paused&&C.audio.currentTime>0.5){
-      // Source RMS, reported every push. This is what the amplifier meters read:
-      // the mixer faders say what was ASKED for, this says what was actually
-      // playing, and only the latter makes the LEDs move with the programme.
-      // One level per BUS, in bus order, each already band-limited. This is
-      // what the amplifier's load and meters read, so it has to carry the same
-      // shape as the buses themselves: five buses, five numbers, and a MID
-      // channel measured from the MID band rather than from the whole
-      // programme.
-      var BAND_KEYS=["midL","midR","subL","subR","subMono"];
-      function sideRms(an){
-        var b=new Uint8Array(an.fftSize), q=0;
-        an.getByteTimeDomainData(b);
-        for(var z=0;z<b.length;z++){ var dv=b[z]-128; q+=dv*dv; }
-        return Math.sqrt(q/b.length)/128;
-      }
-      if(!C.lastRmsAt||(C.ctx.currentTime-C.lastRmsAt)>RMS_GATE){
-        C.lastRmsAt=C.ctx.currentTime;
-        var bv=[];
-        for(var bi=0;bi<BAND_KEYS.length;bi++){
-          var an=C.band[BAND_KEYS[bi]];
-          bv.push(an?Math.round(sideRms(an)*1000)/1000:0);
-        }
-        ntxReport({t:"rms",b:bv,c:clipSeen});
-      }
-      clipSeen=0;
+      C.clipSeen=clipSeen;
       if(!C.taintReported){
       var buf=new Uint8Array(C.analyser.fftSize);
       C.analyser.getByteTimeDomainData(buf);

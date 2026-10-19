@@ -233,13 +233,6 @@ util.AddNetworkString("NTx.ChainRep")
 
 local BUS_ORDER = { "MidL", "MidR", "SubL", "SubR", "SubMono" }
 
-local function busMaskText(mask)
-  local on = {}
-  for b = 0, 4 do
-    if bit.band(tonumber(mask) or 0, bit.lshift(1, b)) ~= 0 then on[#on + 1] = BUS_ORDER[b + 1] end
-  end
-  return (#on > 0) and table.concat(on, "+") or "none"
-end
 
   local function buildDump()
     local L, add = {}, nil
@@ -308,9 +301,9 @@ end
             lvl = istable(src) and string.format("%.3f", tonumber(src[1]) or -1) or "none"
           end
         end
-        add(string.format("    ch%d  %-9s %-14s buses=%-28s fader=%.2f%s  sees=%s",
+        add(string.format("    ch%d  %-9s %-14s feeds=%-6s fader=%.2f%s  sees=%s",
           i, IsValid(ch.Input) and ch.Input:GetClass() or "?", port,
-          busMaskText(ch.Buses), tonumber(ch.Fader) or -1,
+          "all", tonumber(ch.Fader) or -1,
           (ch.Muted and " MUTED" or ""), lvl))
       end
     end

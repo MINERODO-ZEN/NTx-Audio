@@ -9,6 +9,8 @@ NTx_DspLoaded = true
 
 NTx = NTx or {}
 NTx.Graph = { inputs = {}, speakers = {}, mixers = {}, fallbacks = {} }
+NTx.GRAPH_PROTO = 2
+local warnedGraphProto = false
 -- Amplifier state arrives in its own message (ntx_amp_meters.lua owns the
 -- receive), keyed by entity index. Declared here so a partial reload cannot
 -- leave the fallback path reading a table that does not exist yet.
@@ -393,6 +395,17 @@ end)
 
 net.Receive("NTx.GraphSync", function()
   local g = { inputs = {}, speakers = {}, mixers = {}, fallbacks = {} }
+  -- Refuse a format we do not know rather than decoding it field by field and
+  -- landing somewhere in the middle of it. See the note on the server side.
+  local proto = net.ReadUInt(8)
+  if proto ~= (NTx.GRAPH_PROTO or 0) then
+    if not warnedGraphProto then
+      warnedGraphProto = true
+      print("[NTx] graph: server speaks format " .. tostring(proto) .. ", this client expects "
+        .. tostring(NTx.GRAPH_PROTO or 0) .. "; keeping the last good graph.")
+    end
+    return
+  end
   local nIn = net.ReadUInt(8)
   for _ = 1, nIn do
     g.inputs[#g.inputs + 1] = {
@@ -431,7 +444,6 @@ net.Receive("NTx.GraphSync", function()
       m.channels[#m.channels + 1] = {
         input = net.ReadEntity(), fader = net.ReadFloat(),
         muted = net.ReadBool(), label = net.ReadString(),
-        bus = net.ReadUInt(3),
       }
     end
     g.mixers[#g.mixers + 1] = m
