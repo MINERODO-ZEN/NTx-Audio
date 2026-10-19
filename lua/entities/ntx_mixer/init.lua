@@ -93,11 +93,12 @@ end
 
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
-  local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR" }
+  local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR", "SubMono" }
+  local nBus = (NTx and NTx.BUS_COUNT) or 5
   -- istable, not `or {}`: a mixer saved before this change carries a number
   -- here, and indexing that would error on every tick.
   if not istable(self.WireOut) then self.WireOut = {} end
-  for b = 0, 3 do
+  for b = 0, nBus - 1 do
     local out = self:ComputeBusOut(b)
     -- The level and the bus identifier travel together as a pair, so a signal
     -- and the bus it belongs to can never be wired to the wrong channel. A

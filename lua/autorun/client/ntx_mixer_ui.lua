@@ -50,11 +50,15 @@ local function sendChannel(mixer, input, fader, muted, text, bus)
   net.SendToServer()
 end
 
--- Four ways for one source to reach the buses. Picker rather than a wire: this
+-- Five ways for one source to reach the buses. Picker rather than a wire: this
 -- is a patch decision like the fader, and it belongs with the fader.
+--
+-- SUB MONO is the sum of both sides rather than a pick: a sub is fed mono in a
+-- real rig, so choosing a side there would throw half the content away.
 local BUS_CHOICES = {
   { "MID L", NTx.BUS_MIDL }, { "MID R", NTx.BUS_MIDR },
   { "SUB L", NTx.BUS_SUBL }, { "SUB R", NTx.BUS_SUBR },
+  { "SUB MONO", NTx.BUS_SUBMONO },
 }
 
 local function mixerRec(ent)

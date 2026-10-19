@@ -34,15 +34,16 @@ function ENT:CreateWirePorts()
     inDesc[i] = "Source bus levels on channel " .. i .. " [MidL, MidR, SubL, SubR]"
   end
   local outNames, outDesc = {}, {}
-  local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR" }
-  for i = 1, 4 do
+  local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR", "SubMono" }
+  local nBus = (NTx and NTx.BUS_COUNT) or 5
+  for i = 1, nBus do
     outNames[i] = levels[i]
     outDesc[i] = "Level and bus identifier for " .. levels[i] .. " [level, id]"
   end
   local inOv = {}
   for i = 1, maxCh do inOv[i] = "ARRAY" end
   local outOv = {}
-  for i = 1, 4 do outOv[i] = "ARRAY" end
+  for i = 1, nBus do outOv[i] = "ARRAY" end
   -- Every port on this entity is signal typed; the overrides say the shape.
-  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, maxCh, 4, outOv, inOv)
+  NTx.WireSetup(self, inNames, inDesc, outNames, outDesc, maxCh, nBus, outOv, inOv)
 end

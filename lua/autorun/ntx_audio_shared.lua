@@ -210,24 +210,46 @@ end
 -- The id is the wire contract between the mixer and the amplifier: the mixer
 -- publishes it on a port beside the level, so an amplifier learns what it is
 -- being fed by being wired, not by being told in a panel.
+--
+-- MidL/MidR and SubL/SubR select one SIDE of the stereo programme: a cabinet
+-- on MidL plays the left channel and nothing else, which is what stops both
+-- sides arriving from every box. SubMono is the odd one out - it is the
+-- genuine sum of both channels, because a sub is fed a mono signal in a real
+-- rig and picking a side there would throw half the content away.
 NTx.BUS_MIDL, NTx.BUS_MIDR, NTx.BUS_SUBL, NTx.BUS_SUBR = 0, 1, 2, 3
-NTx.BUS_COUNT = 4
+NTx.BUS_SUBMONO = 4
+NTx.BUS_COUNT = 5
 
--- Index of a bus inside the 4-value array a source carries. Same order as the
--- ids above, which keeps the array index and the published identifier equal -
+-- Width of one channel's bus in the amplifier's packed NetworkVar. Three bits,
+-- not two: five buses no longer fit in two, and eight channels of three bits is
+-- 24 - comfortably inside the Int that carries them.
+NTx.BUS_PACK_BITS = 3
+NTx.BUS_PACK_MASK = 7
+
+-- Index of a bus inside the array a source carries. Same order as the ids
+-- above, which keeps the array index and the published identifier equal -
 -- one number means the same thing on both sides of the wire.
-NTx.BUS_NAMES = { "MidL", "MidR", "SubL", "SubR" }
-NTx.BUS_PORTS = { "MidL", "MidR", "SubL", "SubR" }
-NTx.BUS_ID_PORTS = { "MidLBus", "MidRBus", "SubLBus", "SubRBus" }
+NTx.BUS_NAMES = { "MidL", "MidR", "SubL", "SubR", "SubMono" }
+NTx.BUS_PORTS = { "MidL", "MidR", "SubL", "SubR", "SubMono" }
 
 function NTx.BusIsSub(id)
-  local n = math.floor(tonumber(id) or 0)
-  return n == NTx.BUS_SUBL or n == NTx.BUS_SUBR
+  return NTx.BusClamp(id) >= NTx.BUS_SUBL
+end
+
+-- Which channel of the source a bus plays. 0 = left only, 1 = right only,
+-- 2 = both, summed. BusSide is the two-valued form for callers that only ever
+-- deal with a stereo pair.
+function NTx.BusSideOf(id)
+  local n = NTx.BusClamp(id)
+  if n == NTx.BUS_SUBMONO then return 2 end
+  return n % 2
 end
 
 function NTx.BusSide(id)
-  -- 0 = left, 1 = right.
-  return math.floor(tonumber(id) or 0) % 2
+  -- 0 = left, 1 = right. SubMono reports left here deliberately: a caller
+  -- with only a two-way choice must never be handed half of a mono sum.
+  local s = NTx.BusSideOf(id)
+  return (s == 2) and 0 or s
 end
 
 function NTx.BusName(id)
@@ -239,7 +261,7 @@ function NTx.BusClamp(id)
 end
 
 -- Port name to id, for the amplifier reading what the mixer published:
--- "SubR" -> 3, "SubLBus" -> 2.
+-- "SubR" -> 3, "SubMono" -> 4.
 function NTx.BusOfPort(port)
   if type(port) ~= "string" then return nil end
   local base = port:gsub("Bus$", "")

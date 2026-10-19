@@ -231,19 +231,19 @@ end
 -- the difference between "wired to MID" and "not wired" matters.
 function ENT:ChannelBusId(ch)
   local packed = self:GetChannelBuses() or 0
-  local shift = (math.floor(tonumber(ch) or 1) - 1) * 2
+  local shift = (math.floor(tonumber(ch) or 1) - 1) * NTx.BUS_PACK_BITS
   if shift < 0 then return nil end
-  local id = bit.band(bit.rshift(packed, shift), 3)
+  local id = bit.band(bit.rshift(packed, shift), NTx.BUS_PACK_MASK)
   return NTx.BusClamp(id)
 end
 
 -- Records one channel's bus. Called from TriggerInput when the mixer's
 -- identifier arrives, and from the duplicator.
 function ENT:SetChannelBus(ch, id)
-  local shift = (math.floor(tonumber(ch) or 1) - 1) * 2
+  local shift = (math.floor(tonumber(ch) or 1) - 1) * NTx.BUS_PACK_BITS
   if shift < 0 then return end
   local packed = self:GetChannelBuses() or 0
-  packed = bit.band(packed, bit.bnot(bit.lshift(3, shift)))
+  packed = bit.band(packed, bit.bnot(bit.lshift(NTx.BUS_PACK_MASK, shift)))
   packed = bit.bor(packed, bit.lshift(NTx.BusClamp(id), shift))
   self:SetChannelBuses(packed)
 end
