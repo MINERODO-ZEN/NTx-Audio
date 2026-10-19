@@ -647,8 +647,7 @@ net.Receive("NTx.AmpRates", function(_, ply)
     end
   end
   net.Start("NTx.AmpRates")
-  net.WriteString(table.concat(lines, "
-"))
+  net.WriteString(table.concat(lines, String.fromCharCode(10)))
   net.Send(ply)
 end)
 
