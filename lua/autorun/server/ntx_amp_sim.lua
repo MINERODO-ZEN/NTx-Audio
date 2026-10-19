@@ -616,10 +616,10 @@ net.Receive("NTx.AmpRates", function(_, ply)
   if not IsValid(ply) then return end
   local sim = NTx.AmpSimRate or 0
   local lines = {}
+  local want = GetConVar("ntx_amp_sim_hz") and GetConVar("ntx_amp_sim_hz"):GetFloat() or 60
   lines[#lines + 1] = string.format(
-    "simulation %.1f Hz measured (asked for %.1f Hz, ntx_amp_sim_hz=%s)",
-    sim, 1 / math.max(sim, 0.0001),
-    tostring(GetConVar("ntx_amp_sim_hz") and GetConVar("ntx_amp_sim_hz"):GetFloat()))
+    "simulation %.1f Hz measured (asked for %.0f Hz, ntx_amp_sim_hz=%s)",
+    sim, want, tostring(want))
   lines[#lines + 1] = string.format(
     "meter messages: %s sent (capped at %.1f Hz, ntx_meter_hz=%s)",
     tostring(NTx.AmpMeterRate or 0),
@@ -638,8 +638,14 @@ net.Receive("NTx.AmpRates", function(_, ply)
         for _, ch in ipairs(amp:ActiveChannels()) do
           local c = st[ch]
           if c then
-            lines[#lines + 1] = string.format("  amp %d ch%d lin=%.1f dBu clip=%s protect=%s bus=%s",
-              amp:EntIndex(), ch, c.linDb or -120, tostring(c.clip), tostring(c.protect),
+            -- clip is a LIMITING FACTOR: 1 means the output is exactly what
+            -- was asked for, and only above 1 was it clipped. Printing the raw
+            -- number made a healthy channel look like it was clipping.
+            local cf = tonumber(c.clip) or 1
+            lines[#lines + 1] = string.format("  amp %d ch%d lin=%.1f dBu limit=%s protect=%s bus=%s",
+              amp:EntIndex(), ch, c.linDb or -120,
+              string.format("%.2f%s", cf, cf > 1.001 and " CLIPPING" or ""),
+              tostring(c.protect),
               tostring(amp.ChannelBusId and amp:ChannelBusId(ch)))
           end
         end
@@ -670,7 +676,15 @@ hook.Add("Think", "NTx.AmpSim", function()
   local TICK = 1 / simHz()
   local dt = math.min(now - (nextTick - TICK), 0.5)
   if dt <= 0 then dt = TICK end
-  nextTick = now + TICK
+  -- The schedule advances on a fixed grid, not from the current time.
+  --
+  -- Setting it from "now" lands every step just after a tick boundary, so the
+  -- NEXT tick falls short of it and is skipped: a 60 Hz request on a 66 Hz
+  -- server ran at 33 Hz, and every level the meters show was a third of a
+  -- second old. The grid is what was asked for, and the tick rate is the
+  -- ceiling it can actually reach.
+  nextTick = nextTick + TICK
+  if nextTick < now then nextTick = now + TICK end
 
   steps = steps + 1
   local elapsed = now - stepsAt
