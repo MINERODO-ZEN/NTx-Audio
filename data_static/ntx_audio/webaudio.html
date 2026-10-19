@@ -6,6 +6,13 @@
   var C={ctx:null,audio:null,src:null,master:null,analyser:null,tapAn:null,chains:{},url:"",
   zeroWins:0,checks:0,tsum:0,tsq:0,tn:0,taintReported:false,errReported:false,lastState:null,helloSent:false,
   pausedMs:0,stallSent:false};
+  // Amplifier sound effects run in their OWN page, which is its own
+  // AudioContext - a second context next to the programme's, so a fan cannot
+  // colour the music and the two are summed by the device rather than mixed
+  // in the graph. The mode is read from the panel's own URL; this instance
+  // never decodes the programme and never builds a cabinet chain.
+  var SFX_MODE=false;
+  try{ SFX_MODE=/[?&]sfx=1/.test(location.search); }catch(e){}
 // Any uncaught error must reach Lua: a dead page must never look healthy.
 window.onerror=function(m,s,l,c){ try{ ntxReport({t:"jserror",msg:String(m).slice(0,180),line:l||0}); }catch(e){} };
 function ntxReport(o){ try{ ntx.status(JSON.stringify(o)); }catch(e){} }
@@ -536,5 +543,103 @@ function ntxUpdate(s){
   // Amplifier fan, refreshed on every push so a rig that is switched off
   // (or whose page lost the amplifier) goes quiet instead of droning forever.
   try{ applyAmpAudio(s.amp); }catch(e){}
+}
+
+// ------------------------------------------------------------ amplifier SFX
+//
+// One noise source per amplifier, filtered and panned at the amplifier's own
+// position, and buried under the programme. The burial is the point: a fan in
+// the next room is inaudible against a PA, and an amp SFX mix that ignores the
+// programme sounds like it is inside the listener's head.
+function sfxEnsure(){
+  if(C.sfx) return;
+  if(!ensureCtx()) return;
+  var ctx=C.ctx;
+  var s={master:ctx.createGain(),amps:{}};
+  s.master.gain.value=1;
+  s.master.connect(ctx.destination);
+  var len=ctx.sampleRate*2, buf=ctx.createBuffer(1,len,ctx.sampleRate), d=buf.getChannelData(0);
+  for(var i=0;i<len;i++){ d[i]=Math.random()*2-1; }
+  s.noise=buf;
+  C.sfx=s;
+}
+
+function sfxAmp(a){
+  var s=C.sfx;
+  if(!s) return;
+  var e=s.amps[a.id];
+  if(!e){
+    var ctx=C.ctx;
+    var src=ctx.createBufferSource(); src.buffer=s.noise; src.loop=true;
+    var lp=ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=900; lp.Q.value=0.4;
+    var g=ctx.createGain(); g.gain.value=0;
+    var pan=ctx.createPanner();
+    pan.panningModel="HRTF"; pan.distanceModel="inverse"; pan.refDistance=300; pan.rolloffFactor=1;
+    src.connect(lp); lp.connect(g); g.connect(pan); pan.connect(s.master);
+    try{ src.start(ctx.currentTime); }catch(e){}
+    e={src:src,lp:lp,g:g,pan:pan};
+    s.amps[a.id]=e;
+  }
+  var t=C.ctx.currentTime;
+  // The fan's pitch follows the motor, so it is not a hiss that only changes
+  // in level.
+  var rpm=Math.max(Number(a.rpm)||0,0);
+  e.lp.frequency.setTargetAtTime(500+Math.min(rpm/3200,1)*1400,t,0.3);
+  var db=Number(a.db);
+  e.g.gain.setTargetAtTime(db>-100?Math.pow(10,db/20):0,t,0.3);
+  if(e.pan.positionX){
+    e.pan.positionX.setTargetAtTime(Number(a.x)||0,t,0.05);
+    e.pan.positionY.setTargetAtTime(Number(a.y)||0,t,0.05);
+    e.pan.positionZ.setTargetAtTime(Number(a.z)||0,t,0.05);
+  }else{ try{ e.pan.setPosition(Number(a.x)||0,Number(a.y)||0,Number(a.z)||0); }catch(e){} }
+}
+
+// The bridge. Lua pushes the amplifier list, the listener and the programme
+// level; the page does the rest.
+function ntxSfx(s){
+  try{
+    sfxEnsure();
+    if(!C.sfx) return;
+    var t=C.ctx.currentTime;
+    var list=(s&&s.amps)||[];
+    for(var i=0;i<list.length;i++) sfxAmp(list[i]);
+    // An amplifier that has gone away must stop making noise.
+    for(var id in C.sfx.amps){
+      if(!C.sfx.amps[id].seen){ }
+    }
+    for(var i=0;i<list.length;i++){ C.sfx.amps[list[i].id].seen=true; }
+    for(var id in C.sfx.amps){
+      if(!C.sfx.amps[id].seen){
+        try{ C.sfx.amps[id].g.gain.setTargetAtTime(0,t,0.3); }catch(e){}
+        C.sfx.amps[id].seen=false;
+      }
+    }
+    // Buried under the programme. The louder the music, the less of the fan
+    // reaches the listener - which is what actually happens, and what makes the
+    // fan sit in the room instead of on top of it.
+    var prog=Math.max(Number(s&&s.prog)||0,0);
+    var progDb=prog>0?20*Math.log(prog)/Math.log(10):-120;
+    var mask=progDb-(-30);
+    var duck=Math.max(0,Math.min(1,1-mask/24));
+    C.sfx.master.gain.setTargetAtTime(duck,t,0.2);
+    // The listener, so the fan is heard from where the player is.
+    if(s&&s.listener){
+      var L=s.listener;
+      var cl=C.ctx.listener, p=[L.px||0,L.py||0,L.pz||0], f=[L.fx||0,L.fy||0,L.fz||0], u=[L.ux||0,L.uy||0,L.uz||1];
+      if(cl.positionX){
+        cl.positionX.setTargetAtTime(p[0],t,0.05);
+        cl.positionY.setTargetAtTime(p[1],t,0.05);
+        cl.positionZ.setTargetAtTime(p[2],t,0.05);
+        cl.forwardX.setTargetAtTime(f[0],t,0.05);
+        cl.forwardY.setTargetAtTime(f[1],t,0.05);
+        cl.forwardZ.setTargetAtTime(f[2],t,0.05);
+        cl.upX.setTargetAtTime(u[0],t,0.05);
+        cl.upY.setTargetAtTime(u[1],t,0.05);
+        cl.upZ.setTargetAtTime(u[2],t,0.05);
+      }else{
+        try{ cl.setPosition(p[0],p[1],p[2]); cl.setOrientation(f[0],f[1],f[2],u[0],u[1],u[2]); }catch(e){}
+      }
+    }
+  }catch(e){}
 }
 </script></body></html>

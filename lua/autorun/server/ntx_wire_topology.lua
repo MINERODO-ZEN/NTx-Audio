@@ -74,22 +74,30 @@ end
 local function resolveChain(ent)
   local seen = {}
   local cur = ent
+  -- The channel of the amplifier output the chain ends at. Carried through the
+  -- walk because a series cabinet is wired to the PREVIOUS CABINET, not to the
+  -- amplifier, so the channel can only be read from the last hop - and the
+  -- cabinet that hops straight onto the amplifier carries it.
+  local ch = 0
   while IsValid(cur) and not seen[cur] do
     seen[cur] = true
     local cls = cur:GetClass()
     if cls == "ntx_speaker" then
-      local src = NTx.WireUpstream(cur, "In")
+      local src, sport = NTx.WireUpstream(cur, "In")
+      if IsValid(src) and src:GetClass() == "ntx_amplifier" then
+        ch = NTx.WireChannelOf(sport) or 0
+      end
       cur = src
     elseif cls == "ntx_amplifier" then
-      return cur, 0, nil, true
+      return cur, ch, nil, true
     else
       -- A mixer, an input, or something else entirely.
       local mixer = (cls == "ntx_mixer") and cur or nil
       if not mixer and cur.GetMixer then mixer = cur:GetMixer() end
-      return cur, 0, mixer, false
+      return cur, ch, mixer, false
     end
   end
-  return nil, 0, nil, false
+  return nil, ch, nil, false
 end
 
 -- Which amplifier output feeds this cabinet directly (one hop, no series walk).
@@ -295,12 +303,18 @@ local function rebuild()
         local _, _, mixer = resolveChain(spk)
         spk:SetMixer(amp:GetMixer() or mixer)
       else
-        local driver, _, mixer, isAmp = resolveChain(spk)
+        local driver, driverCh, mixer, isAmp = resolveChain(spk)
         if isAmp then
-          -- Reached an amplifier through a series cabinet but with no direct
-          -- channel: attribute to channel 1 so the load still registers.
+          -- Reached an amplifier through a series cabinet. The channel is the
+          -- one the CHAIN hangs off, not channel 1: four cabinets in series on
+          -- channel 2 were all being charged to channel 1, which put their
+          -- impedance in the wrong place and handed the power to the wrong
+          -- stack. The walk carries the channel of the output the head of the
+          -- chain is wired to.
+          local dch = driverCh
+          if dch < 1 then dch = 1 end
           if spk:GetAmp() ~= driver then spk:SetAmp(driver) end
-          if spk:GetAmpChannel() ~= 1 then spk:SetAmpChannel(1) end
+          if spk:GetAmpChannel() ~= dch then spk:SetAmpChannel(dch) end
           spk:SetMixer(driver:GetMixer())
         else
           if spk:GetAmp() ~= NULL then spk:SetAmp(NULL) end

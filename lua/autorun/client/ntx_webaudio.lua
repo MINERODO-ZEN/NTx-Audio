@@ -13,6 +13,11 @@ if NTx_WebAudioLoaded then return end
 NTx_WebAudioLoaded = true
 
 NTx.WebAudio = NTx.WebAudio or { Pages = {} }
+-- The amplifier SFX page: a second instance of the same page, in its own mode
+-- and therefore its own AudioContext. It is kept apart from the programme's
+-- pages so a fan cannot colour the music, and so the two are summed by the
+-- device rather than mixed in one graph.
+NTx.AmpSfx = NTx.AmpSfx or { panel = nil, url = nil, lastAt = 0 }
 NTx.PAGE_API_VERSION = 5
 NTx.PageHello = NTx.PageHello or {}
 NTx.PagePong = NTx.PagePong or {}
@@ -87,6 +92,88 @@ local cvMotionRate = CreateClientConVar("ntx_motion_max_rate", "0", true, false,
 local function mixerPageURL()
   if NTx.PageURL then return NTx.PageURL("webaudio.html") end
   return "https://xenonetwork.moe/dsp/webaudio.html"
+end
+
+-- The SFX page is the same file with a flag on the URL, so there is no second
+-- asset to host: the mode is read by the page from its own address.
+local function sfxPageURL()
+  local base = mixerPageURL()
+  if base:find("%?") then return base .. "&sfx=1" end
+  return base .. "?sfx=1"
+end
+
+-- Open the SFX page if it is not open yet, and hand it the state of every
+-- amplifier. It is a separate page and therefore a separate AudioContext, so
+-- the fan is summed by the device with the programme rather than mixed into
+-- it, and it is buried under the programme rather than sitting on top.
+local function pushAmpSfx(listener)
+  local A = NTx.AmpSfx
+  if not A or not IsValid(A.panel) then return end
+  if CurTime() - (A.lastAt or 0) < 0.05 then return end
+  A.lastAt = CurTime()
+
+  local amps = {}
+  for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
+    if IsValid(amp) then
+      local rec = NTx.AmpRecord and NTx.AmpRecord(amp) or nil
+      local db = -120
+      if rec and rec.fanDb then db = rec.fanDb end
+      if not amp:RunState() then db = -120 end
+      local pos = amp:GetPos()
+      amps[#amps + 1] = {
+        id = amp:EntIndex(),
+        x = pos.x, y = pos.y, z = pos.z,
+        db = db, rpm = rec and rec.fanrpm or 0,
+      }
+    end
+  end
+
+  -- How loud the programme is, so the SFX can be buried under it. The loudest
+  -- measured bus of any input is a fair stand-in for "how loud is it in here".
+  local prog = 0
+  for _, r in pairs(NTx.PageRms or {}) do
+    if r and r.b then
+      for i = 1, #r.b do
+        local v = tonumber(r.b[i]) or 0
+        if v > prog then prog = v end
+      end
+    end
+  end
+
+  local payload = {
+    amps = amps,
+    prog = prog,
+    listener = listener,
+  }
+  pcall(A.panel.Call, A.panel, "ntxSfx(" .. util.TableToJSON(payload) .. ")")
+end
+
+-- Open the SFX page when there is an amplifier to make a noise for. The panel
+-- is hidden and off-screen, like the programme pages: a failing remote
+-- document would otherwise paint its error page over the screen.
+local function ensureAmpSfxPage()
+  local A = NTx.AmpSfx
+  if IsValid(A.panel) then return A.panel end
+  if not ents.FindByClass("ntx_amplifier")[1] then return nil end
+  local panel = vgui.Create("DHTML")
+  panel:SetSize(1, 1)
+  panel:SetPos(-64, -64)
+  panel:SetAlpha(0)
+  panel:SetMouseInputEnabled(false)
+  panel:SetKeyboardInputEnabled(false)
+  panel.Paint = function() end
+  panel.PaintOver = function() end
+  local dbg = GetConVar("ntx_cef_visible")
+  if dbg and dbg:GetBool() then
+    panel:SetAlpha(255)
+    panel:SetSize(480, 360)
+    panel:SetPos(ScrW() - 500, ScrH() - 400)
+    panel:SetMouseInputEnabled(true)
+  end
+  A.panel = panel
+  A.url = sfxPageURL()
+  panel:OpenURL(A.url)
+  return panel
 end
 
 -- Mirror of the mixer gain model, per bus (the split is real here: each tap is
@@ -657,6 +744,11 @@ hook.Add("Think", "NTx.WebAudioThink", function()
   -- first page that reaches an amplifier claims it, which is stable because the
   -- input order is stable.
   local claimed = {}
+  -- The amplifier SFX page is separate from the programme pages, so it gets
+  -- its own state and its own context. Opened here rather than on demand so
+  -- the fan is already running when a rig is switched on.
+  ensureAmpSfxPage()
+  pushAmpSfx(listener)
   for _, pend in ipairs(pending) do
     local P = ensurePage(pend.pkey, pend.url)
     if P then

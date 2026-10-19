@@ -153,11 +153,18 @@ end
 function ENT:ApplyBody()
   local p = self:Prof()
   if not p or not p.body then return false end
-  local n = self:GetNumBodyGroups()
-  if not n or n < 1 then return false end
-  local b = math.Clamp(math.floor(tonumber(p.body) or 0), 0, 255)
-  if self:GetBodygroup(0) == b then return true end
-  self:SetBodygroup(0, b)
+  -- GetBodyGroups, not GetNumBodyGroups: there is no such method, so the call
+  -- raised and aborted the rest of ApplyAmpProfile before it could set the
+  -- body - which is why the faceplate never changed.
+  local groups = self:GetBodyGroups()
+  if not istable(groups) or #groups < 1 then return false end
+  local g = groups[1]
+  local id = tonumber(g.id) or 0
+  local n = math.floor(tonumber(g.num) or 0)
+  if n < 1 then return false end
+  local b = math.Clamp(math.floor(tonumber(p.body) or 0), 0, n - 1)
+  if self:GetBodygroup(id) == b then return true end
+  self:SetBodygroup(id, b)
   return true
 end
 

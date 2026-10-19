@@ -94,7 +94,16 @@ KINDS.meter = function(ent, ch, rec, step)
   if not s then return 0 end
   if s.hot then return 255 end
   local i = math.Clamp(math.floor(tonumber(step) or 0), 0, 4) + 1
-  return ((tonumber(s.duty) or 0) >= METER_STEPS[i]) and 255 or 0
+  local duty = tonumber(s.duty) or 0
+  local lo = METER_STEPS[i]
+  local hi = METER_STEPS[i + 1] or 1
+  if duty <= lo then return 0 end
+  -- Each segment brightens across its own band, so the column has no hard
+  -- edges: a segment fades in as the level climbs towards the next one, and
+  -- fades out again on the way down. Switching on and off made a channel look
+  -- like it was dropping out whenever the level sat near a threshold.
+  local v = (duty - lo) / math.max(hi - lo, 0.001)
+  return math.Clamp(math.floor(v * 255), 0, 255)
 end
 
 KINDS.protect = function(ent, ch, rec)
