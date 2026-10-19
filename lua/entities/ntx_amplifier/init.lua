@@ -17,7 +17,7 @@ function ENT:Initialize()
   -- the default profile.
   self:ApplyAmpProfile(self.AmpProfileId or self:GetProfile() or "cdi1000")
   self:PhysicsInit(SOLID_VPHYSICS)
-  self:SetMoveType(MOVETYPE_PHYSICS)
+  self:SetMoveType(MOVETYPE_VPHYSICS)
   self:SetSolid(SOLID_VPHYSICS)
   local phys = self:GetPhysicsObject()
   if IsValid(phys) then phys:Wake() end
