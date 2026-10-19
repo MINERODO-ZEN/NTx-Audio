@@ -157,7 +157,10 @@ end
 function NTx.AmpCmdLin(rec, ch)
   local c = rec and rec.ch[ch]
   if not c then return 0 end
-  return NTx.AmpVoltRatio(c.linDb - NTx.AMP_FS_DBU)
+  -- The commanded level, which the meter scales its measured level against. It
+  -- has to be the same figure the meter uses, or the scale is computed
+  -- against a different number.
+  return NTx.AmpVoltRatio((c.srvLinDb or c.linDb) - NTx.AMP_FS_DBU)
 end
 
 -- Per-input gain from its mixer bus, matching the server's busLevel exactly.
@@ -208,13 +211,20 @@ function NTx.AmpChannelMeter(ent, ch)
   local rec = NTx.AmpRecord(ent)
   local c = rec and rec.ch[ch]
   if not c then return { linDb = -120, below = -120 } end
-  local linDb, below = c.linDb, c.below
-  -- A level the simulation actually produced wins outright.
-  if c.linFromServer then
-    return { linDb = linDb, below = below, clip = c.clip, protect = c.protect }
-  end
-  -- Otherwise fall back to the slow estimate, scaled by the page's real RMS.
-  linDb = c.cmdDb or linDb
+  -- The level is ours to compute. The page measures the programme per bus and
+  -- the mixer faders say how much of it reaches this amplifier, so it can be
+  -- worked out here, every frame, from the same numbers the audio path uses.
+  --
+  -- The server's figure is the fallback for when there is no measurement to
+  -- work from. It used to WIN, and that was the fight: the client computed a
+  -- smooth level every frame and then discarded it for the simulation's, so
+  -- the meters moved at the simulation's rate and nothing done here could
+  -- change that.
+  -- The fallback when there is no measurement to work from: the simulation's
+  -- own figure, freshest first. It used to win outright, which is what made
+  -- the meters move at the simulation's rate; as a fallback it is exactly
+  -- what it should be.
+  local linDb, below = c.srvLinDb or c.linDb, c.below
   local mixer = ent.GetMixer and ent:GetMixer()
   local bus = c.sub and "sub" or "mid"
   local busId = (ent.ChannelBusId and ent:ChannelBusId(ch)) or NTx.BUS_MIDL
@@ -739,8 +749,11 @@ concommand.Add("ntx_leds_status", function()
           -- the server and sent two different ways. If they disagree, the
           -- message is being read out of step, and that is worth saying
           -- rather than leaving it to be noticed as a strange level.
-          local slow = tonumber(c.cmdDb) or -120
-          local fast = tonumber(c.linDb) or -120
+          -- The server's figure against the one the client computed: they are
+          -- the same quantity from two paths, and a large difference means
+          -- one of them is wrong.
+          local slow = tonumber(c.linDb) or -120
+          local fast = tonumber((NTx.AmpChannelMeter(amp, ch) or {}).linDb) or -120
           local drift = ""
           if math.abs(fast - slow) > 12 then
             drift = string.format(" DRIFT(fast=%.0f slow=%.0f)", fast, slow)
@@ -824,12 +837,17 @@ net.Receive("NTx.AmpMeters", function()
           local protect = net.ReadBool()
           local c = rec.ch[i]
           if not c then c = {} rec.ch[i] = c end
-          c.linDb = db
+          -- The level goes to its own field and does NOT overwrite c.linDb.
+          --
+          -- The meter is the CLIENT's to compute: the page measures the
+          -- programme per bus and the mixer faders say how much of it reaches
+          -- this amplifier, so the level can be worked out here every frame
+          -- from the same numbers the audio path uses. Overwriting c.linDb
+          -- here made the simulation's figure win instead, and the meters
+          -- could then only ever move at the simulation's rate.
+          c.srvLinDb = db
           c.clip = clip
           c.protect = protect
-          -- Tells NTx.AmpChannelMeter this is a real simulated level and not
-          -- the commanded estimate, so it stops second-guessing it.
-          c.linFromServer = true
         end
       else
         -- No AmpSync record yet: the values are still consumed so the read
