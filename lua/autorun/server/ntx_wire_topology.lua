@@ -240,7 +240,7 @@ local function rebuild()
   -- set and published [0, id], so the amplifier was told the right bus and a
   -- silent level. The wires looked completely healthy, which is what made this
   -- hard to see.
-  for _, mx in ipairs(mixers) do
+  for mx in pairs(mixers) do -- pairs, not ipairs: NTx.Mixers is keyed by entity
     if IsValid(mx) and mx.EnsureChannel then
       local live, wired = {}, false
       for i = 1, (NTx.WIRE_MAX_MIX_CH or 16) do
@@ -416,7 +416,9 @@ timer.Create("NTx.WireTopoSweep", 1, 0, function()
   -- Checking here also means a rig that was wired before this list was derived
   -- from the wires repairs itself on the next sweep, instead of the player
   -- having to unlink and relink something to trigger it.
-  for _, mx in pairs(NTx.Mixers or {}) do
+  -- Single-variable pairs on purpose: NTx.Mixers is [entity] = true, so a
+  -- second variable would be the boolean value and IsValid would index it.
+  for mx in pairs(NTx.Mixers or {}) do
     if IsValid(mx) then
       local have = {}
       for _, ch in ipairs(mx.Channels or {}) do have[ch.Input] = true end
