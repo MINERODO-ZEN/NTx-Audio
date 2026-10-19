@@ -22,9 +22,11 @@ end
 -- downstream can route it into the right bus and the amplifier's load, heat and
 -- speaker drive follow the music.
 --
--- Every slot carries the same level. Which one the mixer consumes is its
--- decision, per channel - that is what the per-channel bus picker is for. With
--- no measurement this stays at the fader value alone.
+-- One level per bus, chosen by what that bus actually plays: MidL and SubL
+-- carry the left programme, MidR and SubR the right, SubMono their sum. The
+-- mixer decides which of them a given source feeds, per channel, which is what
+-- the per-channel bus picker is for. With no measurement every slot stays at
+-- the fader value alone.
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
   local vol = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)

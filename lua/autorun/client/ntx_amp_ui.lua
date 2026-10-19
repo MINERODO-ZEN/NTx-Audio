@@ -677,7 +677,8 @@ concommand.Add("ntx_amp_bus", function(_, _, args)
     if id ~= nil then
       print(string.format("    CH%d bus=%s (id %d)", ch, NTx.BusName(id), id))
     else
-      print(string.format("    CH%d bus=NOT WIRED - wire MidL/MidR/SubL/SubR to Ch%dIn", ch, ch))
+      print(string.format("    CH%d bus=NOT WIRED - wire a mixer bus to Ch%dIn", ch, ch))
     end
   end
 end)
+
