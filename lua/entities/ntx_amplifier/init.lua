@@ -7,17 +7,21 @@ NTx.Amplifiers = NTx.Amplifiers or {}
 
 function ENT:Initialize()
   self:SetModel("models/props_lab/reciever01b.mdl")
+  -- The profile, and the model with it, BEFORE the physics is built. The
+  -- collision shape is taken from whatever model is in place when PhysicsInit
+  -- runs, so applying the profile afterwards left a Powersoft amplifier
+  -- wearing the default chassis's collision.
+  --
+  -- AmpProfileId is set by whoever spawned it - the model-specific spawn menu
+  -- entry, or the duplicator. A plain amplifier has neither and falls back to
+  -- the default profile.
+  self:ApplyAmpProfile(self.AmpProfileId or self:GetProfile() or "cdi1000")
   self:PhysicsInit(SOLID_VPHYSICS)
-  self:SetMoveType(MOVETYPE_VPHYSICS)
+  self:SetMoveType(MOVETYPE_PHYSICS)
   self:SetSolid(SOLID_VPHYSICS)
   local phys = self:GetPhysicsObject()
   if IsValid(phys) then phys:Wake() end
   self:CreateWirePorts()
-  -- A derived class names the profile it is. The base amplifier itself has
-  -- none and falls back to the default.
-  if self:GetProfile() == "" then
-    self:ApplyAmpProfile(self.AmpProfileId or "cdi1000")
-  end
   if self:GetTempSink() == 0 then self:SetTempSink(22) end
   if self:GetTempDev() == 0 then self:SetTempDev(22) end
   -- Wire-fed mains take over as soon as anything drives the input; until then

@@ -310,40 +310,59 @@ end
 -- was an amplifier with no profile, no lamps, and one channel of ports. A copy
 -- taken at InitPostEntity, when every file has loaded, cannot go wrong that
 -- way, and it needs no class file at all.
+-- Register a spawn-menu entry for one amplifier profile.
+--
+-- The entry is NOT an amplifier. It is a thin class whose only job is to put
+-- an ordinary ntx_amplifier into the world with this model's profile - and the
+-- entity it creates is a plain ntx_amplifier, the class every other part of
+-- the addon already knows about.
+--
+-- That is deliberate. Making the variant a whole entity class meant twenty
+-- places in the addon that test the class name exactly had to learn about it:
+-- the panel would not open, the lamps were not drawn, the simulation skipped
+-- it, the wire topology ignored it. A menu entry that spawns a normal
+-- amplifier needs none of that, and the profile - which carries the model, the
+-- body group and every published figure - does the rest.
 function NTx.RegisterAmpVariant(class, spec)
   if scripted_ents.GetStored(class) then return false end
-  -- The base hands its table over at the end of its own file, because that is
-  -- the only moment it is complete: shared.lua is included at the top of the
-  -- file and the Initialize is added after it. scripted_ents.GetStored is the
-  -- fallback, and it is empty at that point - the engine registers the base
-  -- class only after the file returns.
-  local base = NTx.AmpBaseTable
-  if not base then
-    local stored = scripted_ents.GetStored("ntx_amplifier")
-    base = stored and stored.t or nil
+  local ENT = {
+    Type = "anim",
+    Base = "ntx_amplifier",
+    PrintName = spec.name or class,
+    Author = "NTx port",
+    Category = spec.category or "NTx Audio",
+    Spawnable = true,
+    AdminOnly = false,
+    Editable = true,
+  }
+  ENT.SpawnFunction = function(ply, tr)
+    if not tr.Hit then return end
+    -- ClassName is a global that the engine sets to the class being spawned
+    -- while SpawnFunction runs. It is cleared for the create so the entity is
+    -- unambiguously the plain amplifier and not this menu entry.
+    local savedClass = ClassName
+    ClassName = nil
+    local ent = ents.Create("ntx_amplifier")
+    ClassName = savedClass
+    if not IsValid(ent) then return end
+    ent:SetPos(tr.HitPos + tr.HitNormal * 8)
+    -- Before Spawn, so the entity's Initialize applies this profile - and does
+    -- so before the collision shape is built, which is taken from whatever
+    -- model is in place at that moment.
+    ent.AmpProfileId = spec.id
+    ent:Spawn()
+    ent:Activate()
+    if CPPI then ent:CPPISetOwner(ply) end
+    undo.Create("NTx " .. tostring(spec.name or class))
+    undo.AddEntity(ent)
+    undo.SetPlayer(ply)
+    undo.Finish()
+    return ent
   end
-  if not base then return false end
-  local ENT = {}
-  for k, v in pairs(base.t or base) do
-    ENT[k] = istable(v) and table.Copy(v) or v
-  end
-  ENT.Type = "anim"
-  ENT.PrintName = spec.name or class
-  ENT.Author = "NTx port"
-  ENT.Category = spec.category or "NTx Audio"
-  ENT.Spawnable = true
-  ENT.AdminOnly = false
-  ENT.Editable = true
-  -- Which profile this class is. The base's Initialize applies it, and the
-  -- body group with it.
-  ENT.AmpProfileId = spec.id
   scripted_ents.Register(ENT, class)
   return true
 end
 
--- Profiles marked as a variant get their own class and their own spawn
--- button. A profile without the flag stays behind the base class's single
--- entry, which is what the generic amplifier is.
 function NTx.RegisterAmpVariants()
   local n = 0
   for _, id in ipairs(NTx.AmpProfileIds()) do
@@ -375,10 +394,9 @@ function NTx.RegisterAmpVariants()
         local class = p.entityClass or ("ntx_ampvar_" .. id)
         local t = scripted_ents.GetStored(class)
         local tab = t and t.t or nil
-        print(string.format("[NTx]   %-22s cat=%-22s profile=%-6s init=%s setup=%s menu=%s",
+        print(string.format("[NTx]   %-22s cat=%-22s profile=%-6s spawn=%s menu=%s",
           class, tostring(p.category), id,
-          tostring(tab and tab.Initialize ~= nil),
-          tostring(tab and tab.SetupDataTables ~= nil),
+          tostring(tab and tab.SpawnFunction ~= nil),
           tostring(list.HasEntry("SpawnableEntities", class))))
       end
     end
