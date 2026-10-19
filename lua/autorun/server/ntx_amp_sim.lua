@@ -646,8 +646,12 @@ net.Receive("NTx.AmpRates", function(_, ply)
       end
     end
   end
+  -- The text is built BEFORE the message is started: an error between the two
+  -- leaves the message open, and the next net.Start then complains about a
+  -- message that was never sent.
+  local text = table.concat(lines, string.char(10))
   net.Start("NTx.AmpRates")
-  net.WriteString(table.concat(lines, String.fromCharCode(10)))
+  net.WriteString(text)
   net.Send(ply)
 end)
 
