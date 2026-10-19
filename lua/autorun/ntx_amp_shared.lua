@@ -243,7 +243,7 @@ for _, spec in ipairs({
   local K = K_SERIES
   local prof = {
     id = spec.id,
-    name = "Powersoft K" .. spec.id:upper(),
+    name = "Powersoft " .. spec.id:upper(),
     body = spec.body,
     box = Vector(19, spec.depth, 1.75),
     mass = spec.mass,
@@ -340,7 +340,10 @@ function NTx.RegisterAmpVariants()
   for _, id in ipairs(NTx.AmpProfileIds()) do
     local p = NTx.AmpProfile(id)
     if p and p.variant then
-      local class = p.class or ("ntx_ampvar_" .. id)
+      -- entityClass, not "class": a profile's own class field is the
+      -- amplifier topology (D, AB, A), and reading that gave every model the
+      -- same entity class name - so one registered and four found it taken.
+      local class = p.entityClass or ("ntx_ampvar_" .. id)
       if NTx.RegisterAmpVariant(class, {
         id = id,
         name = p.print_name or p.name,
