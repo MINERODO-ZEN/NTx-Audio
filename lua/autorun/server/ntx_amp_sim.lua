@@ -652,6 +652,17 @@ net.Receive("NTx.AmpRates", function(_, ply)
       end
     end
   end
+  -- The signal chain, stage by stage. The source publishes, the mixer
+  -- republishes and a cabinet passes the level on, and the rate the level
+  -- ARRIVES is the rate that matters. An entity that thinks fast but only
+  -- publishes when the value changes is as slow as one that thinks slowly.
+  for _, inp in ipairs(ents.FindByClass("ntx_input_url")) do
+    if IsValid(inp) then
+      lines[#lines + 1] = string.format("  source %d publishes %.1f Hz (chain capped at %.0f Hz)",
+        inp:EntIndex(), inp.PublishRate or 0,
+        math.Clamp(GetConVar("ntx_signal_hz") and GetConVar("ntx_signal_hz"):GetFloat() or 67, 1, 130))
+    end
+  end
   -- The text is built BEFORE the message is started: an error between the two
   -- leaves the message open, and the next net.Start then complains about a
   -- message that was never sent.
