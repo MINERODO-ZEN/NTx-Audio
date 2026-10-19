@@ -496,13 +496,15 @@ end
 -- dark red plastic rather than a black dot.
 local function ledMaterial(col, alpha)
   alpha = math.Clamp(tonumber(alpha) or 0, 0, 255)
-  local r, g, b
-  if alpha == 0 then
-    r, g, b = col.r * 0.42, col.g * 0.42, col.b * 0.42
-  else
-    local f = alpha / 255
-    r, g, b = col.r * f, col.g * f, col.b * f
-  end
+  -- The colour is the LIT colour. Unlit, the lamp keeps it at a fraction, so
+  -- an unlit red lens looks like dark red plastic rather than a black dot.
+  --
+  -- The floor is the whole point: brightness runs from the unlit fraction up
+  -- to the full colour, never below it. Scaling straight from zero made a
+  -- fading lamp pass through black, and the quantiser below turned that into
+  -- a fully black lens for a few frames.
+  local f = 0.42 + 0.58 * (alpha / 255)
+  local r, g, b = col.r * f, col.g * f, col.b * f
   -- Quantise so blink and dim levels share cached materials.
   r = math.floor(r / 32) * 32
   g = math.floor(g / 32) * 32
@@ -696,6 +698,37 @@ hook.Add("EntityRemoved", "NTx.AmpLedCleanup", function(ent)
   for key in pairs(NTx.AmpLeds) do
     if key > base and key <= base + 15 then NTx.AmpLeds[key] = nil end
   end
+end)
+
+-- What the lamps are actually doing, per amplifier. A lamp that is missing
+-- and a lamp that is dark look the same on screen, and the difference between
+-- "no layout for this model" and "this layout is drawn but every lamp is
+-- unlit" is exactly what a reader cannot see.
+concommand.Add("ntx_leds_status", function()
+  print("[NTx] amplifier lamps:")
+  local seen = 0
+  for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
+    if IsValid(amp) then
+      seen = seen + 1
+      local lamps = NTx.Pac3Lamps and NTx.Pac3Lamps(amp) or nil
+      local rec = NTx.AmpRecord(amp)
+      local chans = {}
+      for ch = 1, 8 do
+        local c = rec and rec.ch and rec.ch[ch]
+        if c then
+          chans[#chans + 1] = string.format("%d:%d", ch, math.floor(tonumber(c.linDb) or -120))
+        end
+      end
+      print(string.format("  amp %d profile=%q model=%s", amp:EntIndex(),
+        tostring(amp:GetProfile()), tostring(amp:GetModel())))
+      print(string.format("     layout=%s lamps=%d leds=%d channels=[%s]",
+        (lamps and #lamps > 0) and "pac3" or "VIRTUAL PANEL",
+        lamps and #lamps or 0,
+        #NTx.AmpLeds and 0 or 0,
+        table.concat(chans, " ")))
+    end
+  end
+  if seen == 0 then print("  (no amplifiers in the map)") end
 end)
 
 -- -------------------------------------------------------------- audio taps

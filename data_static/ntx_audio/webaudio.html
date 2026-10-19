@@ -638,6 +638,7 @@ function sfxAmp(a){
 // The bridge. Lua pushes the amplifier list, the listener and the programme
 // level; the page does the rest.
 function ntxSfx(s){
+  try{ if(!C.sfxHello){ C.sfxHello=true; ntxReport({t:"hello",v:5,sfx:true}); } }catch(e){}
   try{
     sfxEnsure();
     if(!C.sfx) return;

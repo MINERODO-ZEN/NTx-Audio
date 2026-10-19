@@ -139,6 +139,9 @@ end
 local function pushAmpSfx(listener)
   local A = NTx.AmpSfx
   if not A or not IsValid(A.panel) then return end
+  -- Not until the page says hello: calling a function that does not exist yet
+  -- throws inside the page and only shows up in the browser console.
+  if not A.ready then return end
   if CurTime() - (A.lastAt or 0) < 0.05 then return end
   A.lastAt = CurTime()
 
@@ -224,6 +227,20 @@ local function ensureAmpSfxPage()
   end
   A.panel = panel
   A.url = sfxPageURL()
+  A.ready = false
+  -- The bridge, so the page can say it has loaded. Calling ntxSfx before the
+  -- document is there throws a ReferenceError in the page, and the message
+  -- ends up in the browser console where it explains nothing.
+  panel.OnFinishLoadingDocument = function()
+    local ok = pcall(panel.AddFunction, panel, "ntx", "status",
+      function(json)
+        local ok2, data = pcall(util.JSONToTable, json)
+        if ok2 and type(data) == "table" and data.t == "hello" then A.ready = true end
+      end)
+    if not ok then
+      print("[NTx] amplifier SFX page bridge registration failed")
+    end
+  end
   panel:OpenURL(A.url)
   return panel
 end
