@@ -34,8 +34,18 @@ function ENT:Think()
   -- side-specific, so publishing the same figure in all five slots is what made
   -- MidL and MidR indistinguishable and left every meter unable to reflect the
   -- side its channel was assigned.
-  local rl = ((NTx.MeasuredRms and NTx.MeasuredRms(self, 0)) or 1)
-  local rr = ((NTx.MeasuredRms and NTx.MeasuredRms(self, 1)) or 1)
+  local rl = NTx.MeasuredRms and NTx.MeasuredRms(self, 0)
+  local rr = NTx.MeasuredRms and NTx.MeasuredRms(self, 1)
+  if rl then self.LastL = rl end
+  if rr then self.LastR = rr end
+  -- No measurement: hold the last real level. Falling back to 1 claims the
+  -- source is at full scale, which is how a silent rig ends up looking like a
+  -- loud one. First run has nothing to hold, so it starts at the fader default.
+  -- shortcut: holds forever, so a source that stops reporting freezes at its
+  -- last level instead of decaying to silence. Upgrade path if that ever
+  -- matters: age self.LastL/self.LastR and fade, rather than a new mechanism.
+  rl = rl or self.LastL or 1
+  rr = rr or self.LastR or 1
   -- Energy-preserving sum, matching what a mono bus actually plays.
   local rmono = math.sqrt((rl * rl + rr * rr) * 0.5)
   local n = (NTx and NTx.BUS_COUNT) or 5
