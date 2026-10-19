@@ -610,6 +610,48 @@ local function stepSpeakers(now, dt)
   end
 end
 
+-- The measured rates, asked for by the client command.
+util.AddNetworkString("NTx.AmpRates")
+net.Receive("NTx.AmpRates", function(_, ply)
+  if not IsValid(ply) then return end
+  local sim = NTx.AmpSimRate or 0
+  local lines = {}
+  lines[#lines + 1] = string.format(
+    "simulation %.1f Hz measured (asked for %.1f Hz, ntx_amp_sim_hz=%s)",
+    sim, 1 / math.max(sim, 0.0001),
+    tostring(GetConVar("ntx_amp_sim_hz") and GetConVar("ntx_amp_sim_hz"):GetFloat()))
+  lines[#lines + 1] = string.format(
+    "meter messages: %s sent (capped at %.1f Hz, ntx_meter_hz=%s)",
+    tostring(NTx.AmpMeterRate or 0),
+    math.Clamp(GetConVar("ntx_meter_hz") and GetConVar("ntx_meter_hz"):GetFloat() or 66, 1, 130),
+    tostring(GetConVar("ntx_meter_hz") and GetConVar("ntx_meter_hz"):GetFloat()))
+  lines[#lines + 1] = string.format(
+    "slow sync capped at %.1f Hz (ntx_amp_sync_hz=%s), graph at %.1f Hz (ntx_update_hz=%s)",
+    math.Clamp(GetConVar("ntx_amp_sync_hz") and GetConVar("ntx_amp_sync_hz"):GetFloat() or 10, 1, 130),
+    tostring(GetConVar("ntx_amp_sync_hz") and GetConVar("ntx_amp_sync_hz"):GetFloat()),
+    math.Clamp(GetConVar("ntx_update_hz") and GetConVar("ntx_update_hz"):GetFloat() or 10, 1, 130),
+    tostring(GetConVar("ntx_update_hz") and GetConVar("ntx_update_hz"):GetFloat()))
+  for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
+    if IsValid(amp) then
+      local st = NTx.AmpState[amp]
+      if st then
+        for _, ch in ipairs(amp:ActiveChannels()) do
+          local c = st[ch]
+          if c then
+            lines[#lines + 1] = string.format("  amp %d ch%d lin=%.1f dBu clip=%s protect=%s bus=%s",
+              amp:EntIndex(), ch, c.linDb or -120, tostring(c.clip), tostring(c.protect),
+              tostring(amp.ChannelBusId and amp:ChannelBusId(ch)))
+          end
+        end
+      end
+    end
+  end
+  net.Start("NTx.AmpRates")
+  net.WriteString(table.concat(lines, "
+"))
+  net.Send(ply)
+end)
+
 -- ---------------------------------------------------------------- the tick
 
 local nextTick = 0

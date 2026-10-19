@@ -704,6 +704,16 @@ end)
 -- and a lamp that is dark look the same on screen, and the difference between
 -- "no layout for this model" and "this layout is drawn but every lamp is
 -- unlit" is exactly what a reader cannot see.
+net.Receive("NTx.AmpRates", function()
+  print("[NTx] server rates:")
+  print(net.ReadString())
+end)
+
+concommand.Add("ntx_amp_rate", function()
+  net.Start("NTx.AmpRates")
+  net.SendToServer()
+end)
+
 concommand.Add("ntx_leds_status", function()
   print(string.format("[NTx] meter messages: %d received, %s per second",
     NTx.MeterMsgCount or 0, tostring(NTx.MeterMsgRate or "?")))
