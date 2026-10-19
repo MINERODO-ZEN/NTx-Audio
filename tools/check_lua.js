@@ -223,6 +223,20 @@ function lint(name, src, ast) {
       return `${name}:${lineOf(m.index)} GLua does not support ${why}`;
     }
   }
+  // A SpawnFunction written as a plain function instead of a method receives
+  // the class table as its first argument, so the player and the trace arrive
+  // shifted by one - and tr.Hit is nil, so it returns without spawning
+  // anything and without an error. GMod calls it as
+  // SpawnFunction(sentTable, ply, tr, EntityName).
+  const sf = /SpawnFunction\s*=\s*function\s*\(([^)]*)\)/g;
+  let sm;
+  while ((sm = sf.exec(code)) !== null) {
+    const args = sm[1].split(",").map((a) => a.trim()).filter((a) => a.length);
+    if (args.length === 2) {
+      return `${name}:${lineOf(sm.index)} SpawnFunction takes (ply, tr) - it is called with the class table first, so it must be a method: function(self, ply, tr)`;
+    }
+  }
+
   // A function used at file scope before it is defined is nil at that point,
   // and calling it aborts the whole file - taking every definition after it
   // with it. Lua has no forward declarations, so the order in the file IS the

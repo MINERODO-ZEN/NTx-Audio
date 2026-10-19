@@ -335,28 +335,35 @@ function NTx.RegisterAmpVariant(class, spec)
     AdminOnly = false,
     Editable = true,
   }
-  ENT.SpawnFunction = function(ply, tr)
+  -- GMod calls this as SpawnFunction(sentTable, ply, tr, EntityName), so it
+  -- is a METHOD: self is the class table, and the player and the trace follow.
+  -- Written as a plain function it received the class table as the player and
+  -- the player as the trace, so tr.Hit was nil and it returned without
+  -- spawning anything - and without an error to say so.
+  ENT.SpawnFunction = function(self, ply, tr)
     if not tr.Hit then return end
-    -- ClassName is a global that the engine sets to the class being spawned
-    -- while SpawnFunction runs. It is cleared for the create so the entity is
-    -- unambiguously the plain amplifier and not this menu entry.
+    -- ClassName is a global the engine sets to the class being spawned while
+    -- SpawnFunction runs, and an entity's own table is resolved from it. It is
+    -- cleared for the whole create-and-spawn so the entity is unambiguously
+    -- the plain amplifier and not this menu entry.
     local savedClass = ClassName
     ClassName = nil
     local ent = ents.Create("ntx_amplifier")
+    if IsValid(ent) then
+      ent:SetPos(tr.HitPos + tr.HitNormal * 8)
+      -- Before Spawn, so the entity's Initialize applies this profile - and
+      -- does so before the collision shape is built, which is taken from
+      -- whatever model is in place at that moment.
+      ent.AmpProfileId = spec.id
+      ent:Spawn()
+      ent:Activate()
+      if CPPI then ent:CPPISetOwner(ply) end
+      undo.Create("NTx " .. tostring(spec.name or class))
+      undo.AddEntity(ent)
+      undo.SetPlayer(ply)
+      undo.Finish()
+    end
     ClassName = savedClass
-    if not IsValid(ent) then return end
-    ent:SetPos(tr.HitPos + tr.HitNormal * 8)
-    -- Before Spawn, so the entity's Initialize applies this profile - and does
-    -- so before the collision shape is built, which is taken from whatever
-    -- model is in place at that moment.
-    ent.AmpProfileId = spec.id
-    ent:Spawn()
-    ent:Activate()
-    if CPPI then ent:CPPISetOwner(ply) end
-    undo.Create("NTx " .. tostring(spec.name or class))
-    undo.AddEntity(ent)
-    undo.SetPlayer(ply)
-    undo.Finish()
     return ent
   end
   scripted_ents.Register(ENT, class)
