@@ -614,6 +614,11 @@ end
 
 local nextTick = 0
 
+-- Measured, not assumed. The rate the simulation actually achieves is the
+-- only one that matters: a convar says what was asked for, and the step cost
+-- decides what was delivered.
+local steps, stepsAt, stepRate = 0, CurTime(), 0
+
 hook.Add("Think", "NTx.AmpSim", function()
   if CurTime() < nextTick then return end
   local now = CurTime()
@@ -621,6 +626,14 @@ hook.Add("Think", "NTx.AmpSim", function()
   local dt = math.min(now - (nextTick - TICK), 0.5)
   if dt <= 0 then dt = TICK end
   nextTick = now + TICK
+
+  steps = steps + 1
+  local elapsed = now - stepsAt
+  if elapsed >= 1 then
+    stepRate = steps / elapsed
+    steps, stepsAt = 0, now
+  end
+  NTx.AmpSimRate = stepRate
 
   local live = {}
   for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do

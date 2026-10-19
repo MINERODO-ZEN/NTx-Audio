@@ -705,6 +705,8 @@ end)
 -- "no layout for this model" and "this layout is drawn but every lamp is
 -- unlit" is exactly what a reader cannot see.
 concommand.Add("ntx_leds_status", function()
+  print(string.format("[NTx] meter messages: %d received, %s per second",
+    NTx.MeterMsgCount or 0, tostring(NTx.MeterMsgRate or "?")))
   print("[NTx] amplifier lamps:")
   local seen = 0
   for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
@@ -793,6 +795,13 @@ end
 -- does not change quickly, this only overwrites the parts that do.
 net.Receive("NTx.AmpMeters", function()
   local count = net.ReadUInt(6)
+  -- Measured, not assumed: the rate the fast path ARRIVES is the only one
+  -- that can be compared against the sim.
+  local now = CurTime()
+  NTx.MeterMsgAt = NTx.MeterMsgAt or now
+  NTx.MeterMsgRate = math.Round((count) / math.max(now - NTx.MeterMsgAt, 0.001), 1)
+  NTx.MeterMsgAt = now
+  NTx.MeterMsgCount = (NTx.MeterMsgCount or 0) + 1
   for _ = 1, count do
     local ent = net.ReadEntity()
     local usable = net.ReadUInt(4)

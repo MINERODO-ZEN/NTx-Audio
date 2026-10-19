@@ -616,6 +616,21 @@ function sfxAmp(a){
   e.g.gain.setTargetAtTime(lvl*duck,t,0.3);
 }
 
+// A page that stops hearing from Lua must not keep droning. The panel can
+// die, the bridge can be lost, and a looping noise source does not stop on its
+// own - so the last gain that was set stays and the fan runs forever.
+setInterval(function(){
+  try{
+    if(!C.sfx) return;
+    if(C.sfx.lastAt && (C.ctx.currentTime-C.sfx.lastAt)>1.5){
+      for(var id in C.sfx.amps){
+        try{ C.sfx.amps[id].g.gain.setTargetAtTime(0,C.ctx.currentTime,0.2); }catch(e){}
+        C.sfx.amps[id].seen=false;
+      }
+    }
+  }catch(e){}
+},250);
+
 // The bridge. Lua pushes the amplifier list, the listener and the programme
 // level; the page does the rest.
 function ntxSfx(s){
@@ -624,6 +639,7 @@ function ntxSfx(s){
     sfxEnsure();
     if(!C.sfx) return;
     var t=C.ctx.currentTime;
+    C.sfx.lastAt=t;
     // Known before the amplifiers are updated: the burial is worked out against
     // both of these, and a frame of lag on them is a frame of lag on the duck.
     var prog=Math.max(Number(s&&s.prog)||0,0);
@@ -635,8 +651,15 @@ function ntxSfx(s){
     for(var i=0;i<list.length;i++){ C.sfx.amps[list[i].id].seen=true; }
     for(var id in C.sfx.amps){
       if(!C.sfx.amps[id].seen){
-        try{ C.sfx.amps[id].g.gain.setTargetAtTime(0,t,0.3); }catch(e){}
-        C.sfx.amps[id].seen=false;
+        // Gone: stop the source, not just the gain. A looping buffer source
+        // that is only muted keeps a voice alive for as long as the page is
+        // open, and its id can be handed to a new amplifier later.
+        try{
+          C.sfx.amps[id].g.gain.setTargetAtTime(0,t,0.1);
+          var src=C.sfx.amps[id].src;
+          setTimeout(function(){ try{ src.stop(); }catch(e){} },400);
+        }catch(e){}
+        delete C.sfx.amps[id];
       }
     }
 

@@ -44,6 +44,8 @@ function NTx.BroadcastAmpMeters()
   if now - lastSend < meterInterval() then return end
   lastSend = now
 
+  NTx.AmpMeterSends = (NTx.AmpMeterSends or 0) + 1
+  NTx.AmpMeterRate = NTx.AmpMeterSends
   local list, center, n = {}, nil, 0
   for amp, st in pairs(NTx.AmpState) do
     if IsValid(amp) then
