@@ -15,6 +15,12 @@ if not CLIENT then return end
 
 NTx = NTx or {}
 
+-- Wire format marker. The server drops any message it does not recognise
+-- rather than trying to read it: a client running older addon Lua than the
+-- server would otherwise have its floats read as the wrong fields, and every
+-- input in the rig would quietly report a garbage level.
+local RMS_PROTO = 2
+
 local cadence = 0.25          -- seconds between reports; the server overwrites this
 local nextSend = 0
 local announced = false
@@ -63,6 +69,7 @@ local function report()
   end
   if #items == 0 then return end
   net.Start("NTx.AmpRms")
+  net.WriteUInt(RMS_PROTO, 8)
   net.WriteUInt(#items, 6)
   for _, it in ipairs(items) do
     net.WriteUInt(it.idx, 16)

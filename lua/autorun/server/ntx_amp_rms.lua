@@ -35,6 +35,10 @@ NTx.LiveRms = NTx.LiveRms or {}
 -- at whatever it last said.
 local RMS_TTL = 1.0
 
+-- Wire format marker, matched against the one in the client half.
+local RMS_PROTO = 2
+local warnedProto = false
+
 -- The level for one input, or nil when nobody has reported recently. Callers
 -- treat nil as "use the fader estimate".
 --
@@ -151,6 +155,19 @@ end)
 net.Receive("NTx.AmpRms", function(_, ply)
   if not IsValid(ply) or not ply.__ntxRmsReady then return end
   if not rateOk(ply) then return end
+  -- Format marker first. A client whose addon Lua is older than the server
+  -- sends a different layout, and reading it as this one would consume the
+  -- wrong floats - producing plausible-looking but wrong levels everywhere,
+  -- which is far worse than having none. Each net message is self-contained,
+  -- so abandoning it here simply leaves those inputs on the fader estimate.
+  if net.ReadUInt(8) ~= RMS_PROTO then
+    if not warnedProto then
+      warnedProto = true
+      print("[NTx] AmpRms: a client is reporting an older format; "
+        .. "its measured levels are ignored until it updates.")
+    end
+    return
+  end
   local count = net.ReadUInt(6)
   if count > 64 then return end
   local now = CurTime()
