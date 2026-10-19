@@ -11,7 +11,38 @@ window.onerror=function(m,s,l,c){ try{ ntxReport({t:"jserror",msg:String(m).slic
 function ntxReport(o){ try{ ntx.status(JSON.stringify(o)); }catch(e){} }
 function ensureCtx(){
   if(C.ctx) return true;
-  var AC=window.AudioContext||window.webkitAudioContext;
+  // Band-limited source measurement.
+//
+// The buses are band-specific, so one figure measured across the whole
+// programme cannot tell a MID channel from a SUB one: both would be handed the
+// same load and the same meter reading even though the page filters them apart
+// moments later. Each side is measured twice - above and below the same 80 Hz
+// crossover the cabinet chains use - and the mono sum is measured too, so
+// SubMono is a genuine band-limited sum rather than a relabelled side.
+function bq2(ctx,type){
+  var a=ctx.createBiquadFilter(); a.type=type; a.frequency.value=80; a.Q.value=0.7071;
+  var b=ctx.createBiquadFilter(); b.type=type; b.frequency.value=80; b.Q.value=0.7071;
+  a.connect(b);
+  return [a,b];
+}
+function buildBands(){
+  var ctx=C.ctx;
+  var mL=bq2(ctx,"highpass"), mR=bq2(ctx,"highpass");
+  var sL=bq2(ctx,"lowpass"),  sR=bq2(ctx,"lowpass");
+  var sM=bq2(ctx,"lowpass");
+  C.split.connect(mL[0],0,0); C.split.connect(mR[0],1,0);
+  C.split.connect(sL[0],0,0); C.split.connect(sR[0],1,0);
+  C.mono.connect(sM[0],0,0);
+  C.band={};
+  var defs=[["midL",mL],["midR",mR],["subL",sL],["subR",sR],["subMono",sM]];
+  for(var i=0;i<defs.length;i++){
+    var an=ctx.createAnalyser(); an.fftSize=256;
+    defs[i][1][1].connect(an);
+    C.band[defs[i][0]]=an;
+  }
+}
+
+var AC=window.AudioContext||window.webkitAudioContext;
   if(!AC) return false;
   C.ctx=new AC();
   C.master=C.ctx.createGain(); C.master.gain.value=1;
@@ -25,14 +56,12 @@ function ensureCtx(){
   // outputs into the merger's single input is what makes SubMono a real mono
   // sum rather than one of the two channels renamed.
   C.mono=C.ctx.createChannelMerger(1);
-  C.tapAnL=C.ctx.createAnalyser(); C.tapAnL.fftSize=256;
-  C.tapAnR=C.ctx.createAnalyser(); C.tapAnR.fftSize=256;
-  // Permanent edges from the splitter. These are wired ONCE here and are never
-  // disconnected: a blanket C.split.disconnect() to swap the source also tears
-  // these out, and the only way to notice is that every mono bus goes silent
-  // while the stereo ones keep working.
+  // Permanent edges from the splitter. Wired ONCE here and never disconnected:
+  // a blanket C.split.disconnect() to swap the source also tears these out, and
+  // the only symptom is that every mono bus goes silent while the stereo ones
+  // keep working.
   C.split.connect(C.mono,0,0); C.split.connect(C.mono,1,0);
-  C.split.connect(C.tapAnL,0,0); C.split.connect(C.tapAnR,1,0);
+  buildBands();
   // Limiter after the sum: N full-scale streams summing to >0 dBFS clip in
   // the destination and distort. Normalisation handles the steady-state
   // sum; this catches the transients that slip through it.
@@ -218,7 +247,7 @@ function setUrl(u){
   C.audio.src=u;
   playAudio();
 }
-function buildChain(kind){
+function buildChain(kind,side){
   var ch={nodes:[]};
   function bq(type){ var f=C.ctx.createBiquadFilter(); f.type=type; f.frequency.value=80; f.Q.value=0.7071; return f; }
   var a1,a2;
@@ -251,6 +280,11 @@ function buildChain(kind){
   ch.a1=a1; ch.a2=a2; ch.g=g; ch.dl=dl; ch.pol=pol; ch.pn=pn; ch.kind=kind; ch.occ=occ; ch.sh=sh;
   ch.drive=1;
   ch.anFQ=anFQ; ch.anPan=anPan; ch.lastG=1; ch.wired=false;
+  // side MUST be set before this wire, not after buildChain returns. Wiring
+  // first is what made every tap stay on the full stereo source: ch.side was
+  // undefined at wire time, so the chain bound to C.src, and the wireChain
+  // that ran afterwards returned early on ch.wired and never corrected it.
+  ch.side=(typeof side==="number")?side:undefined;
   wireChain(ch);
   return ch;
 }
@@ -327,11 +361,18 @@ function chainSrc(ch){
 function wireChain(ch){
   if(!C.src||!ch||ch.wired) return;
   var n=chainSrc(ch); if(!n) return;
-  try{ n[0].connect(ch.a1,n[1],0); ch.wired=true; }catch(e){}
+  try{
+    n[0].connect(ch.a1,n[1],0);
+    // Recorded, not recomputed. dropChain used to derive the node from
+    // ch.side, which by then was the NEW side - so changing a cabinet's bus
+    // disconnected the output it was not on and left the old edge live.
+    ch.srcNode=n[0]; ch.srcOut=n[1];
+    ch.wired=true;
+  }catch(e){}
 }
 function dropChain(ch){
-  var n=chainSrc(ch);
-  try{ if(n){ n[0].disconnect(ch.a1); } }catch(e){}
+  try{ if(ch.srcNode){ ch.srcNode.disconnect(ch.a1); } }catch(e){}
+  ch.srcNode=null; ch.wired=false;
   try{ ch.a1.disconnect(); }catch(e){}
 }
 // Gains ride setTargetAtTime so 10 Hz Lua pushes never zipper-click
@@ -385,8 +426,7 @@ function ntxUpdate(s){
     // leave it fed from the old splitter output.
     if(!ch||ch.kind!==d.kind||ch.side!==d.side){
       if(ch) dropChain(ch);
-      ch=buildChain(d.kind);
-      ch.side=(typeof d.side==="number")?d.side:undefined;
+      ch=buildChain(d.kind, d.side);
       C.chains[d.id]=ch;
     }
     wireChain(ch);
@@ -431,21 +471,26 @@ function ntxUpdate(s){
       // Source RMS, reported every push. This is what the amplifier meters read:
       // the mixer faders say what was ASKED for, this says what was actually
       // playing, and only the latter makes the LEDs move with the programme.
-      // Both sides separately, because the buses are side-specific: a single
-      // mono figure would make MidL and MidR indistinguishable and no meter
-      // could ever reflect the side a channel was assigned.
+      // One level per BUS, in bus order, each already band-limited. This is
+      // what the amplifier's load and meters read, so it has to carry the same
+      // shape as the buses themselves: five buses, five numbers, and a MID
+      // channel measured from the MID band rather than from the whole
+      // programme.
+      var BAND_KEYS=["midL","midR","subL","subR","subMono"];
       function sideRms(an){
         var b=new Uint8Array(an.fftSize), q=0;
         an.getByteTimeDomainData(b);
         for(var z=0;z<b.length;z++){ var dv=b[z]-128; q+=dv*dv; }
         return Math.sqrt(q/b.length)/128;
       }
-      var rl=sideRms(C.tapAnL), rr=sideRms(C.tapAnR);
-      var rms=Math.sqrt((rl*rl+rr*rr)/2);
       if(!C.lastRmsAt||(C.ctx.currentTime-C.lastRmsAt)>RMS_GATE){
         C.lastRmsAt=C.ctx.currentTime;
-        ntxReport({t:"rms",v:Math.round(rms*1000)/1000,
-                   l:Math.round(rl*1000)/1000,r:Math.round(rr*1000)/1000,c:clipSeen});
+        var bv=[];
+        for(var bi=0;bi<BAND_KEYS.length;bi++){
+          var an=C.band[BAND_KEYS[bi]];
+          bv.push(an?Math.round(sideRms(an)*1000)/1000:0);
+        }
+        ntxReport({t:"rms",b:bv,c:clipSeen});
       }
       clipSeen=0;
       if(!C.taintReported){

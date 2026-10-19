@@ -81,24 +81,27 @@ const SERVER_ONLY = [
 const blank = (m) => " ".repeat(m.length);
 
 function lint(name, src) {
+  // Both checks run against `code`, never `src`: a comment that mentions a
+  // banned operator ("bit.lshift, not <<") is not a violation, and matching raw
+  // source flagged the very comment written to prevent the mistake.
+  const code = src
+    .replace(/--\[\[[\s\S]*?\]\]/g, blank)
+    .replace(/--[^\n]*/g, blank)
+    .replace(/"(\\.|[^"\\])*"/g, blank)
+    .replace(/'(\\.|[^'\\])*'/g, blank);
+  const lineOf = (i) => src.slice(0, i).split("\n").length;
+
   for (const [re, why] of GLUA_BANNED) {
-    const m = src.match(re);
+    const m = code.match(re);
     if (m) {
-      const line = src.slice(0, m.index).split("\n").length;
-      return `${name}:${line} GLua does not support ${why}`;
+      return `${name}:${lineOf(m.index)} GLua does not support ${why}`;
     }
   }
   if (name.replace(/\\/g, "/").includes("/lua/autorun/client/")) {
-    const code = src
-      .replace(/--\[\[[\s\S]*?\]\]/g, blank)
-      .replace(/--[^\n]*/g, blank)
-      .replace(/"(\\.|[^"\\])*"/g, blank)
-      .replace(/'(\\.|[^'\\])*'/g, blank);
     for (const fn of SERVER_ONLY) {
       const m = code.match(new RegExp("(?<![\\w.])" + fn.replace(/\./g, "\\.") + "\\s*\\("));
       if (m) {
-        const line = src.slice(0, m.index).split("\n").length;
-        return name + ":" + line + " " + fn + " is server-only and would abort this client file";
+        return name + ":" + lineOf(m.index) + " " + fn + " is server-only and would abort this client file";
       }
     }
   }

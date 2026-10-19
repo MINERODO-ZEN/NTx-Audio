@@ -80,7 +80,7 @@ function NTx.CollectGraph()
       local chs = {}
       for _, ch in ipairs(mixer.Channels or {}) do
         if IsValid(ch.Input) then
-          chs[#chs + 1] = { input = ch.Input, fader = ch.Fader, muted = ch.Muted, label = ch.Label, bus = ch.Bus }
+          chs[#chs + 1] = { input = ch.Input, fader = ch.Fader, muted = ch.Muted, label = ch.Label, buses = ch.Buses }
         end
       end
       g.mixers[#g.mixers + 1] = {
@@ -147,7 +147,7 @@ function NTx.BroadcastGraph(target)
       net.WriteFloat(ch.fader)
       net.WriteBool(ch.muted)
       net.WriteString(string.sub(ch.label or "", 1, 24))
-      net.WriteUInt(NTx.BusClamp(ch.bus), 3)
+      net.WriteUInt(math.Clamp(math.floor(tonumber(ch.buses) or 0), 0, 255), 8)
     end
   end
   if target then net.Send(target) else net.Broadcast() end
@@ -712,7 +712,8 @@ net.Receive("NTx.MixerEdit", function(_, ply)
     ch.Label = string.sub(label or "", 1, 24)
     -- Which bus/side this channel feeds. Read last so an older client that
     -- stops after the label leaves the existing value alone.
-    ch.Bus = NTx.BusClamp(net.ReadUInt(3))
+    -- One bit per bus, all five set by default.
+    ch.Buses = math.Clamp(net.ReadUInt(8), 1, 255)
   elseif kind == "unlink" then
     local input = net.ReadEntity()
     if IsValid(input) then

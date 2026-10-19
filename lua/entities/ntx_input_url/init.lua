@@ -30,30 +30,23 @@ end
 function ENT:Think()
   self:NextThink(CurTime() + 0.1)
   local vol = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
-  -- One level per BUS, not one level copied everywhere. The buses are
-  -- side-specific, so publishing the same figure in all five slots is what made
-  -- MidL and MidR indistinguishable and left every meter unable to reflect the
-  -- side its channel was assigned.
-  local rl = NTx.MeasuredRms and NTx.MeasuredRms(self, 0)
-  local rr = NTx.MeasuredRms and NTx.MeasuredRms(self, 1)
-  if rl then self.LastL = rl end
-  if rr then self.LastR = rr end
-  -- No measurement: hold the last real level. Falling back to 1 claims the
-  -- source is at full scale, which is how a silent rig ends up looking like a
-  -- loud one. First run has nothing to hold, so it starts at the fader default.
-  -- shortcut: holds forever, so a source that stops reporting freezes at its
-  -- last level instead of decaying to silence. Upgrade path if that ever
-  -- matters: age self.LastL/self.LastR and fade, rather than a new mechanism.
-  rl = rl or self.LastL or 1
-  rr = rr or self.LastR or 1
-  -- Energy-preserving sum, matching what a mono bus actually plays.
-  local rmono = math.sqrt((rl * rl + rr * rr) * 0.5)
+  -- One level per BUS, straight from the page's band-limited measurement. The
+  -- side split, the band split and the mono sum all happen there, because they
+  -- are properties of the audio; redoing them here would only approximate what
+  -- the page already measured properly.
   local n = (NTx and NTx.BUS_COUNT) or 5
   local changed = false
   if not istable(self.WireBuses) then self.WireBuses = {} end
+  if not istable(self.LastBus) then self.LastBus = {} end
   for i = 1, n do
-    local sd = (NTx and NTx.BusSideOf) and NTx.BusSideOf(i - 1) or 0
-    local lvl = vol * ((sd == 0) and rl or (sd == 1) and rr or rmono)
+    local m = NTx.MeasuredRms and NTx.MeasuredRms(self, i - 1)
+    if m then self.LastBus[i] = m end
+    -- No measurement: hold the last real level. Falling back to 1 claims the
+    -- source is at full scale, which is how a silent rig ends up looking like
+    -- a loud one. First run has nothing to hold, so it starts at the fader.
+    -- shortcut: holds forever, so a source that stops reporting freezes at its
+    -- last level instead of decaying. Upgrade path: age LastBus and fade.
+    local lvl = vol * (m or self.LastBus[i] or 1)
     if self.WireBuses[i] ~= lvl then
       self.WireBuses[i] = lvl
       changed = true

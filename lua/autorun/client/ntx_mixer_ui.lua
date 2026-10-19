@@ -55,10 +55,12 @@ end
 --
 -- SUB MONO is the sum of both sides rather than a pick: a sub is fed mono in a
 -- real rig, so choosing a side there would throw half the content away.
+-- Third field is the short form: five toggles share one row, and the full
+-- "SUB MONO" label clips at a fifth of the width.
 local BUS_CHOICES = {
-  { "MID L", NTx.BUS_MIDL }, { "MID R", NTx.BUS_MIDR },
-  { "SUB L", NTx.BUS_SUBL }, { "SUB R", NTx.BUS_SUBR },
-  { "SUB MONO", NTx.BUS_SUBMONO },
+  { "MID L", NTx.BUS_MIDL, "MIDL" }, { "MID R", NTx.BUS_MIDR, "MIDR" },
+  { "SUB L", NTx.BUS_SUBL, "SUBL" }, { "SUB R", NTx.BUS_SUBR, "SUBR" },
+  { "SUB MONO", NTx.BUS_SUBMONO, "sMONO" },
 }
 
 local function mixerRec(ent)
@@ -183,18 +185,36 @@ function NTx.OpenMixerUI(mixer)
       local db = label(bot, dbLabel(ch.fader), COL_DIM)
       db:SetWide(62)
       db:Dock(RIGHT)
-      local busBox = vgui.Create("DComboBox", bot)
-      busBox:Dock(RIGHT)
-      busBox:SetWide(74)
-      busBox:SetTall(20)
-      for _, b in ipairs(BUS_CHOICES) do NTx.ComboAdd(busBox, b[1], b[2]) end
-      NTx.ComboPick(busBox, ch.bus)
+      -- One toggle per bus rather than a single combo. A stereo source belongs
+      -- on MidL AND MidR at once, so "which bus" was the wrong question to ask;
+      -- "which buses" is the one the panel needs to answer.
+      local busRow = vgui.Create("DPanel", bot)
+      busRow:Dock(RIGHT)
+      busRow:SetWide(268)
+      busRow:SetTall(20)
+      busRow.Paint = function() end
+      local mask = math.Clamp(math.floor(tonumber(ch.buses) or 31), 1, 255)
+      local boxes = {}
       local apply = function()
         db:SetText(dbLabel(slider:GetValue()))
+        local m = 0
+        for i = 1, #BUS_CHOICES do
+          -- bit.lshift, not <<: GLua has no shift operators.
+          if boxes[i]:GetChecked() then m = m + bit.lshift(1, BUS_CHOICES[i][2]) end
+        end
         sendChannel(mixer, ch.input, slider:GetValue(), mute:GetChecked(),
-          entry:GetValue(), NTx.ComboGet(busBox))
+          entry:GetValue(), math.Clamp(m, 1, 255))
       end
-      busBox.OnSelect = function() apply() end
+      for i, b in ipairs(BUS_CHOICES) do
+        local cb = vgui.Create("DCheckBoxLabel", busRow)
+        cb:Dock(LEFT)
+        cb:SetWide(math.floor(268 / #BUS_CHOICES))
+        cb:SetText(b[3])
+        cb:SetTextColor(COL_TEXT)
+        cb:SetChecked(bit.band(mask, bit.lshift(1, b[2])) ~= 0)
+        cb.OnChange = function() apply() end
+        boxes[i] = cb
+      end
       slider.OnValueChanged = function() apply() end
       mute.OnChange = function() apply() end
       entry.OnEnter = function() apply() end

@@ -207,8 +207,10 @@ local function rebuild()
         if old then
           ch.Fader, ch.Muted, ch.Label = old.Fader, old.Muted, old.Label
           -- The bus assignment is a setting, so it has to survive a rebuild
-          -- exactly like the fader does.
-          ch.Bus = old.Bus
+          -- exactly like the fader does. It is a mask now - one source can feed
+          -- MidL and MidR at once - so an old single-id value is widened to
+          -- "every bus" rather than dropped to one.
+          ch.Buses = tonumber(old.Buses) or tonumber(old.Bus) or 31
         end
       end
       mixer.Channels = want

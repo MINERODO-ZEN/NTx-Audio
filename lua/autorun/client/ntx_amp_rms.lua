@@ -23,7 +23,7 @@ NTx = NTx or {}
 -- rather than trying to read it: a client running older addon Lua than the
 -- server would otherwise have its floats read as the wrong fields, and every
 -- input in the rig would quietly report a garbage level.
-local RMS_PROTO = 2
+local RMS_PROTO = 3
 
 local cadence = 0.25          -- seconds between reports; the server overwrites this
 local nextSend = 0
@@ -65,7 +65,7 @@ local function report()
     -- The client ages its own copy at one second; anything older would arrive
     -- at the server already stale.
     if idx and (now - r.at) < 1 then
-      items[#items + 1] = { idx = idx, v = r.v, l = r.l, r = r.r }
+      items[#items + 1] = { idx = idx, v = r.v, b = r.b }
       -- Cap as we go rather than trimming afterwards: table.move does not exist
       -- in GLua's 5.1 base library.
       if #items >= 64 then break end
@@ -77,11 +77,12 @@ local function report()
   net.WriteUInt(#items, 6)
   for _, it in ipairs(items) do
     net.WriteUInt(it.idx, 16)
-    -- Sides first: a page that predates per-side reporting sent a single mono
-    -- figure, which the server falls back to for both.
-    net.WriteFloat(it.l or it.v)
-    net.WriteFloat(it.r or it.v)
-    net.WriteFloat(it.v)
+    -- Every bus, band-limited. A fixed count so the server can always read the
+    -- message to its end: a variable-length array that a short report leaves
+    -- truncated would desynchronise the next item.
+    for i = 1, 5 do
+      net.WriteFloat(tonumber(it.b and it.b[i]) or it.v or 0)
+    end
   end
   net.SendToServer()
 end

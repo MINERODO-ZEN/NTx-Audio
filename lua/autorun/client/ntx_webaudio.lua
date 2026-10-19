@@ -444,10 +444,12 @@ function NTx.WebAudioOnStatus(pkey, json)
     -- server's commanded estimate.
     NTx.PageRms[pkey] = {
       v = math.Clamp(tonumber(r.v) or 0, 0, 4),
-      -- Per side, so a bus can read the part of the programme it actually
-      -- plays. Absent on an older page, and the server falls back to v.
-      l = tonumber(r.l),
-      r = tonumber(r.r),
+      -- One level per bus, each already band-limited in the page. This is the
+      -- array the buses are indexed by, so a MID channel is measured from the
+      -- MID band and a SUB one from the SUB band - they are genuinely different
+      -- loads rather than the same figure relabelled. Absent on an older page,
+      -- and the server falls back to v.
+      b = istable(r.b) and r.b or nil,
       c = tonumber(r.c) or 0,
       at = CurTime(),
     }

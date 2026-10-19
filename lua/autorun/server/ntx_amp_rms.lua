@@ -36,7 +36,7 @@ NTx.LiveRms = NTx.LiveRms or {}
 local RMS_TTL = 1.0
 
 -- Wire format marker, matched against the one in the client half.
-local RMS_PROTO = 2
+local RMS_PROTO = 3
 local warnedProto = false
 
 -- The level for one input, or nil when nobody has reported recently. Callers
@@ -45,27 +45,15 @@ local warnedProto = false
 -- side picks which part of the programme: 0 left, 1 right, nil the mono sum.
 -- The buses are side-specific - MidL has to see only the left programme or its
 -- meter is reading the wrong signal - so this cannot stay a single number.
-function NTx.MeasuredRms(ent, side)
+function NTx.MeasuredRms(ent, bus)
   if not IsValid(ent) then return nil end
   local r = NTx.LiveRms[ent]
   if not r then return nil end
   if (CurTime() - r.at) > RMS_TTL then return nil end
-  if side == 0 then return r.l or r.v end
-  if side == 1 then return r.r or r.v end
-  return r.v
+  local v = istable(r.b) and r.b[(math.floor(tonumber(bus) or 0)) + 1] or nil
+  return tonumber(v) or r.v
 end
 
--- Energy-preserving sum of the two sides, matching what a mono bus actually
--- plays. Halving the sum of squares rather than averaging the levels keeps the
--- result at the same loudness a mono mix of the same material would be.
-function NTx.MeasuredRmsMono(ent)
-  local l = NTx.MeasuredRms(ent, 0)
-  local r = NTx.MeasuredRms(ent, 1)
-  if l == nil and r == nil then return nil end
-  l = l or 0
-  r = r or 0
-  return math.sqrt((l * l + r * r) * 0.5)
-end
 
 -- Server tick interval. TICK is not dependable on the server realm - it is
 -- documented as a client-side global - and reading it at file scope would also
@@ -173,18 +161,17 @@ net.Receive("NTx.AmpRms", function(_, ply)
   local now = CurTime()
   for _ = 1, count do
     local ent = Entity(net.ReadUInt(16))
-    local l = net.ReadFloat()
-    local r = net.ReadFloat()
-    local v = net.ReadFloat()
+    local b = {}
+    for i = 1, 5 do b[i] = net.ReadFloat() end
     -- Only real inputs, only sane levels. Anything else is dropped, not
     -- stored, so a crafted packet cannot poison the model.
     if IsValid(ent) and ent:GetClass() == "ntx_input_url" then
-      l = math.Clamp(tonumber(l) or 0, 0, 1)
-      r = math.Clamp(tonumber(r) or 0, 0, 1)
+      for i = 1, 5 do b[i] = math.Clamp(tonumber(b[i]) or 0, 0, 1) end
       NTx.LiveRms[ent] = {
-        l = l,
-        r = r,
-        v = math.Clamp(tonumber(v) or 0, 0, 1),
+        b = b,
+        -- Mono of the two sides, kept so an older caller that does not know
+        -- about buses still gets a single usable level.
+        v = math.sqrt((b[1] * b[1] + b[2] * b[2]) * 0.5),
         at = now,
         by = ply,
       }
@@ -246,6 +233,14 @@ util.AddNetworkString("NTx.ChainRep")
 
 local BUS_ORDER = { "MidL", "MidR", "SubL", "SubR", "SubMono" }
 
+local function busMaskText(mask)
+  local on = {}
+  for b = 0, 4 do
+    if bit.band(tonumber(mask) or 0, bit.lshift(1, b)) ~= 0 then on[#on + 1] = BUS_ORDER[b + 1] end
+  end
+  return (#on > 0) and table.concat(on, "+") or "none"
+end
+
   local function buildDump()
     local L, add = {}, nil
     add = function(s) L[#L + 1] = s end
@@ -270,8 +265,12 @@ local BUS_ORDER = { "MidL", "MidR", "SubL", "SubR", "SubMono" }
         tonumber(e:GetInputVolume()) or 0, table.concat(vals, " ")))
       local r = NTx.LiveRms and NTx.LiveRms[e]
       if r then
-        add(string.format("    measured l=%.3f r=%.3f mono=%.3f  (%.2fs old, by %s)",
-          tonumber(r.l) or 0, tonumber(r.r) or 0, tonumber(r.v) or 0,
+        local mv = {}
+        for bi = 1, 5 do
+          mv[#mv + 1] = string.format("%.3f", tonumber(r.b and r.b[bi]) or -1)
+        end
+        add(string.format("    measured [%s]  (%.2fs old, by %s)",
+          table.concat(mv, " "),
           CurTime() - (r.at or 0),
           IsValid(r.by) and r.by:Nick() or "?"))
       else
@@ -306,12 +305,12 @@ local BUS_ORDER = { "MidL", "MidR", "SubL", "SubR", "SubMono" }
         for k = 1, 16 do
           if port == "In" .. k then
             local src = (mx.WireLevels or {})[k]
-            lvl = istable(src) and string.format("%.3f", tonumber(src[ch.Bus + 1]) or -1) or "none"
+            lvl = istable(src) and string.format("%.3f", tonumber(src[1]) or -1) or "none"
           end
         end
-        add(string.format("    ch%d  %-9s %-14s bus=%-7s fader=%.2f%s  sees=%s",
+        add(string.format("    ch%d  %-9s %-14s buses=%-28s fader=%.2f%s  sees=%s",
           i, IsValid(ch.Input) and ch.Input:GetClass() or "?", port,
-          NTx.BusName(ch.Bus), tonumber(ch.Fader) or -1,
+          busMaskText(ch.Buses), tonumber(ch.Fader) or -1,
           (ch.Muted and " MUTED" or ""), lvl))
       end
     end

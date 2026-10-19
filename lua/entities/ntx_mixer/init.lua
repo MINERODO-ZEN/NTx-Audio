@@ -54,12 +54,17 @@ function ENT:TriggerInput(name, value)
   self.WireLevels[n] = buses
 end
 
--- Which bus one mixer channel feeds. Stored on the channel and set from the
--- panel, because the source does not know which of its four slots this
--- particular channel consumes.
-local function channelBus(ch)
-  if not ch then return NTx.BUS_MIDL end
-  return NTx.BusClamp(ch.Bus)
+-- Which buses one mixer channel feeds, as a bitmask rather than a single id.
+--
+-- A stereo source belongs on MidL AND MidR - each side carrying its own level -
+-- not on one bus with the other three left dead. With one bus per channel a
+-- patched source fed exactly one output and the rest of the mixer sat silent,
+-- which is what made "every output is wired to an amp" still produce nothing.
+local function channelFeeds(ch, bus)
+  if not ch then return false end
+  local mask = tonumber(ch.Buses)
+  if not mask then return false end
+  return bit.band(mask, bit.lshift(1, math.floor(tonumber(bus) or 0))) ~= 0
 end
 
 -- Level of one bus/side, summed in energy across the channels assigned to it.
@@ -75,7 +80,7 @@ function ENT:ComputeBusOut(bus)
 
   local energy = 0
   for _, ch in ipairs(self.Channels or {}) do
-    if channelBus(ch) == bus then
+    if channelFeeds(ch, bus) then
       local idx = nil
       -- The channel's own position in the array of inputs, not its list index.
       for i = 1, (NTx.WIRE_MAX_MIX_CH or 16) do
@@ -135,7 +140,11 @@ function ENT:EnsureChannel(input)
   if #self.Channels >= MAX_CHANNELS then return nil end
   -- Bus this channel feeds, as a bus id (MidL/MidR/SubL/SubR). Defaults to
   -- MID left; set from the mixer panel.
-  local ch = { Input = input, Fader = 1, Muted = false, Label = "", Bus = 0 }
+  -- Every bus by default. A source patched into the mixer is expected to feed
+  -- the rig; each bus reads its own measured slot, so "all" gives five
+  -- genuinely different levels rather than five copies of one. Untick the ones
+  -- a source should not reach.
+  local ch = { Input = input, Fader = 1, Muted = false, Label = "", Buses = 31 }
   self.Channels[#self.Channels + 1] = ch
   return ch
 end
