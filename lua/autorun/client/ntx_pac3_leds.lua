@@ -132,14 +132,20 @@ function NTx.Pac3Lamps(ent)
   local hit = cache[key]
   if hit ~= nil then return hit end
 
-  local data = NTx.PAC3_LEDS
-  local rows = nil
-  if data and data.byProfile and tostring(id) ~= "" then
-    rows = data.byProfile[tostring(id)]
+  -- Two sources of layouts: the one baked into this addon, and the ones a
+  -- third-party pack brought. A pack is checked as well as the built-in file,
+  -- so a pack model with no layout of its own falls back to nothing rather
+  -- than to a built-in model's lamps.
+  local function lookup(key, field)
+    if key == "" then return nil end
+    for _, data in ipairs({ NTx.PAC3_LEDS, NTx.PackLamps }) do
+      if data and data[field] and data[field][key] then return data[field][key] end
+    end
+    return nil
   end
-  if not rows and data and data.byModel and tostring(model) ~= "" then
-    rows = data.byModel[tostring(model)]
-  end
+
+  local rows = lookup(tostring(id), "byProfile")
+  if not rows then rows = lookup(tostring(model), "byModel") end
 
   local lamps
   if rows and #rows > 0 then

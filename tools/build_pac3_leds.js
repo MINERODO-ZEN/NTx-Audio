@@ -26,6 +26,17 @@ const fs = require('fs');
 const path = require('path');
 const luaparse = require(path.join(__dirname, 'vendor', 'luaparse.js'));
 
+// Pack mode: emit the lamp rows for ONE pac3 file as the JSON a third-party
+// pack ships, instead of baking them into the addon's own generated file.
+//
+//   node tools/build_pac3_leds.js --pack <pac3File> <outFile>
+//
+// A pack cannot ship a PAC3 file for the game to parse: PAC3 layouts are Lua
+// table bodies, and parsing user-authored Lua inside the game means
+// CompileString on it. The rows are baked here instead, and the pack ships
+// the result.
+const PACK_MODE = process.argv[2] === '--pack';
+
 const REPO = path.resolve(__dirname, '..');
 const PAC_DIR = process.argv[2]
   || path.join('C:/Program Files (x86)/Steam/steamapps/common/GarrysMod/garrysmod/data/pac3/ntx');
@@ -132,6 +143,38 @@ const q = (s) => '"' + String(s).replace(/["\\]/g, '\\$&') + '"';
 
 const byModel = {};
 const byProfile = {};
+
+if (PACK_MODE) {
+  const src = process.argv[3];
+  const dst = process.argv[4];
+  if (!src || !dst) {
+    console.error('usage: node tools/build_pac3_leds.js --pack <pac3File> <outFile>');
+    process.exit(1);
+  }
+  const parsed = parseFile(src);
+  const { model, lamps } = parsed;
+  if (lamps.length === 0) {
+    console.error('  x ' + src + ': no models/led.mdl entries');
+    process.exit(1);
+  }
+  // Real arrays, not the strings num() produces for the Lua emitter. The
+  // game reads these as numbers and indexes them positionally.
+  const jnum = (n) => Math.round(Number(n) * 1e4) / 1e4;
+  const rows = lamps.map(
+    (l) =>
+      [l.kind, l.ch === null ? 0 : l.ch, l.step === null || l.step === undefined ? 0 : l.step,
+        jnum(l.pos[0]), jnum(l.pos[1]), jnum(l.pos[2]),
+        jnum(l.ang[0]), jnum(l.ang[1]), jnum(l.ang[2]),
+        Math.round(l.col[0] * 255), Math.round(l.col[1] * 255), Math.round(l.col[2] * 255)]
+  );
+  const out = {
+    byModel: { [model]: rows },
+    byProfile: { [path.basename(src, '.txt')]: rows },
+  };
+  fs.writeFileSync(dst, JSON.stringify(out, null, 2) + String.fromCharCode(10));
+  console.log('wrote ' + dst + '  (' + lamps.length + ' lamp(s), model ' + model + ')');
+  process.exit(0);
+}
 
 if (!fs.existsSync(PAC_DIR)) {
   console.error('PAC3 directory not found: ' + PAC_DIR);
