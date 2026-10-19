@@ -63,10 +63,10 @@ end
 function ENT:SpawnFunction(ply, tr)
   if not tr.Hit then return end
   -- GMod calls this as ENT.SpawnFunction, so self is the CLASS TABLE, not an
-  -- entity - self:GetClass() does not exist here. The class states its own
-  -- name instead, and the derived classes override it, which is what stops
-  -- the "Powersoft K10" button spawning a plain amplifier.
-  local ent = ents.Create(self.AmpClassName or "ntx_amplifier")
+  -- entity - self:GetClass() does not exist here. GMod puts the class name on
+  -- the class table as ClassName when it registers, so that is what to use:
+  -- it is already correct for the variant classes, which are the whole point.
+  local ent = ents.Create(self.ClassName or "ntx_amplifier")
   ent:SetPos(tr.HitPos + tr.HitNormal * 8)
   ent:Spawn()
   ent:Activate()

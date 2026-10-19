@@ -189,6 +189,11 @@ local K_SERIES = {
     "channels", "ratedw", "ratedz", "minz", "sens", "ilime",
     "thbias", "fan", "fandb",
   },
+  -- Each of the five model numbers is its own button in the spawn menu.
+  -- Without this they would all be the one ntx_amplifier class and collapse
+  -- into a single entry.
+  variant = true,
+  category = "Powersoft K Series",
 }
 
 for _, spec in ipairs({
@@ -274,6 +279,61 @@ end
 
 function NTx.AmpProfile(id)
   return NTx.AmpProfiles[tostring(id or "")] or nil
+end
+
+-- Register a spawnable entity class for one amplifier profile.
+--
+-- A profile is not a spawn button. GMod's spawn menu lists ENTITY CLASSES, so
+-- five profiles sharing one class collapse into a single entry that spawns
+-- whichever profile the class defaults to - the thing the Powersoft models
+-- were doing before this existed.
+--
+-- The class is a flat COPY of the base amplifier's table, not a derivation
+-- from it. GMod's scripted-entity inheritance snapshots the class table when
+-- it registers, and a class file that derives from a base can be registered
+-- BEFORE that base has finished loading - GMod says so itself. The result here
+-- was an amplifier with no profile, no lamps, and one channel of ports. A copy
+-- taken at InitPostEntity, when every file has loaded, cannot go wrong that
+-- way, and it needs no class file at all.
+function NTx.RegisterAmpVariant(class, spec)
+  if scripted_ents.GetStored(class) then return false end
+  local base = scripted_ents.GetStored("ntx_amplifier")
+  if not base or not base.t then return false end
+  local ENT = {}
+  for k, v in pairs(base.t) do
+    ENT[k] = istable(v) and table.Copy(v) or v
+  end
+  ENT.Type = "anim"
+  ENT.PrintName = spec.name or class
+  ENT.Author = "NTx port"
+  ENT.Category = spec.category or "NTx Audio"
+  ENT.Spawnable = true
+  ENT.AdminOnly = false
+  ENT.Editable = true
+  -- Which profile this class is. The base's Initialize applies it, and the
+  -- body group with it.
+  ENT.AmpProfileId = spec.id
+  scripted_ents.Register(ENT, class)
+  return true
+end
+
+-- Profiles marked as a variant get their own class and their own spawn
+-- button. A profile without the flag stays behind the base class's single
+-- entry, which is what the generic amplifier is.
+function NTx.RegisterAmpVariants()
+  local n = 0
+  for _, id in ipairs(NTx.AmpProfileIds()) do
+    local p = NTx.AmpProfile(id)
+    if p and p.variant then
+      local class = p.class or ("ntx_ampvar_" .. id)
+      if NTx.RegisterAmpVariant(class, {
+        id = id,
+        name = p.print_name or p.name,
+        category = p.category,
+      }) then n = n + 1 end
+    end
+  end
+  return n
 end
 
 function NTx.AmpProfileIds()

@@ -136,6 +136,10 @@ function NTx.LoadPacks()
           prof.name = prof.name or id
           prof.print_name = prof.print_name or prof.name
           prof.category = prof.category or name
+          -- A pack model is a new model, so it gets its own button. A pack
+          -- that only wants to add a profile to an existing class can say
+          -- "variant": false.
+          if prof.variant == nil then prof.variant = true end
           -- JSON has no Vector. A pack states its box as three numbers.
           if type(prof.box) == "table" and not isvector(prof.box) then
             prof.box = Vector(prof.box[1] or 0, prof.box[2] or 0, prof.box[3] or 0)
@@ -169,51 +173,19 @@ function NTx.LoadPacks()
   return #loaded, loaded
 end
 
--- The name and category a pack wants its models to appear under.
-function NTx.PackPrintName(id)
-  local p = NTx.AmpProfile(id)
-  return p and (p.print_name or p.name) or tostring(id)
-end
-
-function NTx.PackCategory(id)
-  local p = NTx.AmpProfile(id)
-  return (p and p.category) or "NTx Audio"
-end
-
--- One spawnable entity class per pack profile.
---
--- A profile is not a spawn button: GMod's spawn menu lists ENTITY CLASSES, so
--- a pack that only declared profiles would have nothing to click. The class is
--- registered here rather than shipped as a file, because a file would have to
--- load AFTER the base amplifier's class - and the order addons load in is not
--- something a pack author can rely on. Registering at InitPostEntity sidesteps
--- that: every Lua file has finished loading by then, so the base is there.
+-- The spawn buttons. One registration path for the built-in variants and the
+-- pack ones, because they are the same thing: a profile that wants its own
+-- entry in the menu.
 --
 -- Registering on the server and the client independently is deliberate. The
 -- class name is the same in both, and the profile travels as a string, so
 -- nothing has to be sent over the wire for the client to draw the right face.
-local function registerPackClasses()
-  for id, pack in pairs(NTx.Packs) do
-    local class = "ntx_pack_" .. id
-    if not scripted_ents.GetStored(class) then
-      local ENT = {
-        Type = "anim",
-        Base = "ntx_amplifier",
-        PrintName = NTx.PackPrintName(id),
-        Author = "NTx pack",
-        Category = NTx.PackCategory(id),
-        Spawnable = true,
-        AdminOnly = false,
-        Editable = true,
-        AmpProfileId = id,
-        AmpClassName = class,
-      }
-      scripted_ents.Register(ENT, class)
-    end
+hook.Add("InitPostEntity", "NTx.AmpVariants", function()
+  local n = NTx.RegisterAmpVariants()
+  if n > 0 then
+    print(string.format("[NTx] %d amplifier variant(s) registered.", n))
   end
-end
-
-hook.Add("InitPostEntity", "NTx.PackClasses", registerPackClasses)
+end)
 
 -- What the loader found. A pack that does not appear here is a pack that did
 -- not load, and the reason is usually a path that did not match.
