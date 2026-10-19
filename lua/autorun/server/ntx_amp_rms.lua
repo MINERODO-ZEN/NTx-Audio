@@ -251,6 +251,7 @@ local BUS_ORDER = { "MidL", "MidR", "SubL", "SubR", "SubMono" }
     add = function(s) L[#L + 1] = s end
 
     add("===== NTx signal chain =====")
+    add("build: " .. tostring(NTx.COMMIT or "unknown"))
     add(string.format("convars: sim_hz=%s meter_hz=%s",
       tostring(GetConVar("ntx_amp_sim_hz") and GetConVar("ntx_amp_sim_hz"):GetFloat()),
       tostring(GetConVar("ntx_meter_hz") and GetConVar("ntx_meter_hz"):GetFloat())))

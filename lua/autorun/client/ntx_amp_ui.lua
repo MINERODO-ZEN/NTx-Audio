@@ -689,6 +689,7 @@ util.AddNetworkString("NTx.ChainRep")
 -- this client knows: whether the page is running, and what arrived in the graph.
 net.Receive("NTx.ChainRep", function()
   print(net.ReadString())
+  print(string.format("client build: %s", tostring(NTx.COMMIT or "unknown")))
   print(string.format("page running=%s  graph: %d inputs %d speakers %d mixers",
     tostring(NTx.WebAudioRunning),
     #(NTx.Graph and NTx.Graph.inputs or {}),

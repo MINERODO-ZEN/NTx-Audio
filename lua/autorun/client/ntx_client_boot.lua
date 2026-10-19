@@ -31,6 +31,7 @@ end)
 
 concommand.Add("ntx_audio_status", function()
   local wantCv = GetConVar("ntx_backend")
+  print("[NTx] commit " .. tostring(NTx.COMMIT or "unknown"))
   print("[NTx] backend want=" .. (wantCv and wantCv:GetString() or "?")
     .. " effective=" .. (NTx.EffectiveBackend and NTx.EffectiveBackend() or "?")
     .. " probe=" .. tostring(NTx.WebAudioDetail or "not run")
