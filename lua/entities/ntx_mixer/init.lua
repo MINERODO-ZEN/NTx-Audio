@@ -86,7 +86,10 @@ function ENT:ComputeBusOut(bus)
 end
 
 function ENT:Think()
-  self:NextThink(CurTime() + 0.1)
+  -- The signal chain's rate, not a tenth of a second: this is one of three
+  -- stages the measured level passes through on its way to the amplifier, and
+  -- at ten hertz the level arriving there only changed ten times a second.
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or 1 / 60))
   local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR", "SubMono" }
   local nBus = (NTx and NTx.BUS_COUNT) or 5
   -- istable, not `or {}`: a mixer saved before this change carries a number

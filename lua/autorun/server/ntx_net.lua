@@ -27,6 +27,8 @@ CreateConVar("ntx_max_channels", "16", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Max au
 CreateConVar("ntx_update_hz", "10", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Graph rebroadcast rate cap (Hz)")
 CreateConVar("ntx_amp_sync_hz", "10", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Amplifier state broadcast rate cap (Hz)")
 CreateConVar("ntx_meter_hz", "66", FCVAR_ARCHIVE + FCVAR_REPLICATED, "Meter/level broadcast rate cap (Hz); separate from the slow state sync")
+CreateConVar("ntx_signal_hz", "60", FCVAR_ARCHIVE + FCVAR_REPLICATED,
+  "Rate the signal chain runs at (Hz): a source publishes its measured level, the mixer republishes it, a cabinet passes it on")
 CreateConVar("ntx_amp_sync_dist", "6000", FCVAR_ARCHIVE + FCVAR_REPLICATED,
   "Radius in units around which amplifier state is still broadcast to a client (0 = everywhere)")
 

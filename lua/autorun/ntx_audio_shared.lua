@@ -256,6 +256,20 @@ function NTx.BusName(id)
   return NTx.BUS_NAMES[NTx.BusClamp(id) + 1] or "MidL"
 end
 
+-- How often the signal chain runs.
+--
+-- A source publishes its measured level, the mixer republishes it, and a
+-- cabinet passes it on. All of that used to happen on a tenth-of-a-second
+-- timer, so however fast the measurement arrived the level reaching the
+-- amplifier only changed ten times a second - three throttles in a row.
+--
+-- The entities only publish when the value actually changes, so this is a
+-- ceiling on how fast the chain can follow the programme, not a fixed cost.
+function NTx.SignalInterval()
+  local cv = GetConVar("ntx_signal_hz")
+  return 1 / math.Clamp(cv and cv:GetFloat() or 60, 1, 130)
+end
+
 function NTx.BusClamp(id)
   return math.Clamp(math.floor(tonumber(id) or 0), 0, NTx.BUS_COUNT - 1)
 end

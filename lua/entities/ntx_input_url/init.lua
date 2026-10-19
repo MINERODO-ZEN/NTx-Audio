@@ -28,7 +28,10 @@ end
 -- the per-channel bus picker is for. With no measurement every slot stays at
 -- the fader value alone.
 function ENT:Think()
-  self:NextThink(CurTime() + 0.1)
+  -- The signal chain's rate, not a tenth of a second: this is one of three
+  -- stages the measured level passes through on its way to the amplifier, and
+  -- at ten hertz the level arriving there only changed ten times a second.
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or 1 / 60))
   local vol = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
   -- A source with no URL cannot play, so it contributes NOTHING. The fallback
   -- below is the fader position, which for a source that is not playing at all

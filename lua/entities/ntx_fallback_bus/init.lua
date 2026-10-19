@@ -27,7 +27,10 @@ function ENT:TriggerInput(name, value)
 end
 
 function ENT:Think()
-  self:NextThink(CurTime() + 0.1)
+  -- The signal chain's rate, not a tenth of a second: this is one of three
+  -- stages the measured level passes through on its way to the amplifier, and
+  -- at ten hertz the level arriving there only changed ten times a second.
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or 1 / 60))
   local out = math.Clamp((self.WireIn or 0) * NTx.FaderToGain(self:GetTrim()), 0, 2)
   if out ~= self.WireOut then
     self.WireOut = out
