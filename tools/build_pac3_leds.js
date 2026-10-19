@@ -47,18 +47,31 @@ const keyOf = (f) =>
   f.type !== 'TableKey' ? null : String(f.key.raw).replace(/^["']|["']$/g, '');
 const entries = (n) => (n && n.type === 'TableConstructorExpression' ? n.fields.map((f) => [keyOf(f), f.value]) : []);
 const field = (n, name) => entries(n).find(([k]) => k === name);
+// A number from the AST, keeping its sign.
+//
+// A negative literal in Lua is NOT part of the literal: "-0.63" parses as a
+// unary minus applied to the literal 0.63. Reading the inner literal alone
+// therefore drops the sign, and every negative coordinate in a PAC3 layout came
+// out positive - which put the lamp column above the middle of the panel
+// instead of below it.
+const argNum = (a) => {
+  if (!a) return NaN;
+  if (a.type === "UnaryExpression") {
+    const v = argNum(a.argument);
+    if (a.operator === "-") return -v;
+    if (a.operator === "+") return v;
+    return v;
+  }
+  return parseFloat(a.raw !== undefined ? a.raw : a.value);
+};
 const lit = (v) =>
-  v && v.arguments ? v.arguments.map((a) => parseFloat(a.raw || a.argument.raw)) : null;
+  v && v.arguments ? v.arguments.map(argNum) : null;
 // A plain number, not a string literal. PAC3 stores Size as one, so the
 // string-literal reader above finds nothing and every lamp came out at zero.
 const numLit = (v) => {
   if (!v) return 0;
-  if (v.type === "NumericLiteral") return v.value;
-  if (v.arguments && v.arguments[0]) {
-    const a = v.arguments[0];
-    return parseFloat(a.raw || a.value || 0) || 0;
-  }
-  return 0;
+  const n = argNum(v);
+  return isNaN(n) ? 0 : n;
 };
 const str = (v) => (v && v.raw ? String(v.raw).replace(/^["']|["']$/g, '') : null);
 
@@ -87,6 +100,29 @@ const KINDS = new Set(['power', 'fault', 'signal', 'odep', 'clip', 'protect', 't
 // greens are a level ladder and the top two are alarms, not level. Yellow
 // below red, which makes yellow the onset of protection and red the fault.
 const ALIAS = { green: 'meter', yellow: 'protect', red: 'fault' };
+
+// A negative number in Lua is a unary minus over a literal, so a reader that
+// takes the literal alone loses the sign. That silently moved every negative
+// coordinate in a layout to the positive side - a lamp column ended up above
+// the middle of the panel instead of below it. The check lives here rather
+// than in a test file because a bake that gets this wrong must not produce a
+// file at all.
+(function selfTest() {
+  const src = 'return { ["P"] = Vector(1, 2, -0.63), ["S"] = -4 }';
+  const tree = luaparse.parse(src, { luaVersion: '5.1' });
+  const t = tree.body[0].arguments[0];
+  // field() returns the whole ENTRY - [key, value] - so the value is [1].
+  const pos = lit(field(t, 'P')[1]);
+  const sz = numLit(field(t, 'S')[1]);
+  if (!pos || pos[2] !== -0.63) {
+    console.error('  x the number reader lost a sign in a call argument');
+    process.exit(1);
+  }
+  if (sz !== -4) {
+    console.error('  x the number reader lost a sign in a plain value');
+    process.exit(1);
+  }
+})();
 
 function parseFile(file) {
   const raw = fs.readFileSync(file, 'utf8');
