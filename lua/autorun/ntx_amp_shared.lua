@@ -601,6 +601,16 @@ end
 -- accident. Telemetry stays NORMAL so generic wire readers still work on it.
 NTx.WIRE_SIG_TYPE = "NTXSIG"
 
+-- Types that carry the rig's audio signal. Two names, because a signal
+-- travelling from a mixer to an amplifier is a [level, bus id] PAIR and so is
+-- typed ARRAY, while a plain scalar level is NTXSIG. Any scan that decides
+-- "is this entity wired?" has to accept both: matching only NTXSIG reports
+-- every amplifier and every mixer as unwired, and the topology walk then
+-- skips them in silence.
+function NTx.IsWireSignalType(t)
+  return t == NTx.WIRE_SIG_TYPE or t == "ARRAY"
+end
+
 local function registerWireTypes()
   if not WireLib or not WireLib.DT then return end
   if WireLib.DT[NTx.WIRE_SIG_TYPE] then return end

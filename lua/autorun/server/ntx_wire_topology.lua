@@ -120,7 +120,7 @@ end
 local function wiredUp(ent)
   if not IsValid(ent) or not ent.Inputs then return false end
   for name, inp in pairs(ent.Inputs) do
-    if inp.Type == NTx.WIRE_SIG_TYPE and IsValid(inp.Src) then return true end
+    if NTx.IsWireSignalType(inp.Type) and IsValid(inp.Src) then return true end
   end
   return false
 end
@@ -129,7 +129,7 @@ end
 local function wiredDown(ent)
   if not IsValid(ent) or not ent.Outputs then return false end
   for _, o in pairs(ent.Outputs) do
-    if o.Type == NTx.WIRE_SIG_TYPE then
+    if NTx.IsWireSignalType(o.Type) then
       for _, dst in ipairs(o.Connected or {}) do
         if IsValid(dst.Entity) then return true end
       end
