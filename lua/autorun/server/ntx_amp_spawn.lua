@@ -19,11 +19,14 @@ local function spawn(ply, id)
   local ent = ents.Create("ntx_amplifier")
   if not IsValid(ent) then return end
   ent:SetPos(tr.HitPos + tr.HitNormal * SPAWN_OFFSET)
+  -- Before Spawn, so Initialize sees a profile already set and does not stamp
+  -- the default one over the top. It also means the wire ports are built for
+  -- this model's channel count rather than the default's.
+  ent:ApplyAmpProfile(p.id)
   ent:Spawn()
   ent:Activate()
   -- Before the owner is set, so CPPI catches it like any other spawned entity.
   if CPPI then ent:CPPISetOwner(ply) end
-  ent:ApplyAmpProfile(p.id)
   undo.Create("NTx " .. p.name)
   undo.AddEntity(ent)
   undo.SetPlayer(ply)
