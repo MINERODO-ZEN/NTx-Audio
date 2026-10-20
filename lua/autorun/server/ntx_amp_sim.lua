@@ -662,9 +662,17 @@ net.Receive("NTx.AmpRates", function(_, ply)
   -- publishes when the value changes is as slow as one that thinks slowly.
   for _, inp in ipairs(ents.FindByClass("ntx_input_url")) do
     if IsValid(inp) then
-      lines[#lines + 1] = string.format("  source %d publishes %.1f Hz (chain capped at %.0f Hz)",
+      local held = NTx.LiveRms and NTx.LiveRms[inp] or nil
+      local vals = {}
+      if held and held.b then
+        for i = 1, 5 do vals[#vals + 1] = string.format("%.3f", tonumber(held.b[i]) or -1) end
+      end
+      lines[#lines + 1] = string.format(
+        "  source %d publishes %.1f Hz (chain capped at %.0f Hz) measured=[%s] age=%.2fs",
         inp:EntIndex(), inp.PublishRate or 0,
-        math.Clamp(GetConVar("ntx_signal_hz") and GetConVar("ntx_signal_hz"):GetFloat() or 67, 1, 130))
+        math.Clamp(GetConVar("ntx_signal_hz") and GetConVar("ntx_signal_hz"):GetFloat() or 67, 1, 130),
+        table.concat(vals, " "),
+        held and (CurTime() - (held.at or 0)) or -1)
     end
   end
   -- The text is built BEFORE the message is started: an error between the two
