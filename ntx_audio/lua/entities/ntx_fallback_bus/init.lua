@@ -1,0 +1,90 @@
+AddCSLuaFile("cl_init.lua")
+AddCSLuaFile("shared.lua")
+include("shared.lua")
+
+function ENT:Initialize()
+  -- Never sleep. GMod puts an entity that is out of sight to sleep and stops
+  -- calling its Think entirely, so a source that slept stopped publishing its
+  -- level - and the mixer, the amplifier's input and the cabinets all
+  -- inherited that rate. It looked like a slow measurement; it was a sleeping
+  -- prop. These entities are the signal path, so they have to keep running.
+  if self.SetNeverSleep then
+    self:SetNeverSleep(true)
+  else
+    -- Said out loud rather than skipped: a missing method means the entity can
+    -- still be put to sleep, and the level stops with it.
+    print("[NTx] " .. self:GetClass() .. ": SetNeverSleep is not available")
+  end
+  self:SetModel("models/hunter/blocks/cube025x025x025.mdl")
+  self:SetMaterial("models/debug/debugwhite")
+  self:SetColor(Color(200, 120, 20, 140))
+  self:SetRenderMode(RENDERMODE_TRANSALPHA)
+  self:PhysicsInit(SOLID_VPHYSICS)
+  self:SetMoveType(MOVETYPE_VPHYSICS)
+  self:SetSolid(SOLID_VPHYSICS)
+  local phys = self:GetPhysicsObject()
+  if IsValid(phys) then phys:Wake() end
+  if self:GetTrim() == 0 then self:SetTrim(1) end
+  self.WireIn = 0
+  self.WireOut = -1
+  self:CreateWirePorts()
+  if NTx.InstallWireHooks then NTx.InstallWireHooks(self) end
+end
+
+-- Pass-through with the bus trim applied, so the same level that reaches a
+-- wired mixer output also reaches a legacy client's single flat tap.
+function ENT:TriggerInput(name, value)
+  if name ~= "In" then return end
+  self.WireIn = math.Clamp(tonumber(value) or 0, 0, 2)
+end
+
+-- Published from a server hook as well: GMod scales an entity's think
+-- frequency by its distance from the nearest player.
+function ENT:UpdateSignal()
+  -- The signal chain's rate, not a tenth of a second: this is one of three
+  -- stages the measured level passes through on its way to the amplifier, and
+  -- at ten hertz the level arriving there only changed ten times a second.
+  local out = math.Clamp((self.WireIn or 0) * NTx.FaderToGain(self:GetTrim()), 0, 2)
+  if out ~= self.WireOut then
+    self.WireOut = out
+    NTx.WireOut(self, "Out", out)
+  end
+end
+
+function ENT:SpawnFunction(ply, tr)
+  if not tr.Hit then return end
+  local ent = ents.Create("ntx_fallback_bus")
+  ent:SetPos(tr.HitPos + tr.HitNormal * 8)
+  ent:Spawn()
+  ent:Activate()
+  if CPPI then ent:CPPISetOwner(ply) end
+  undo.Create("NTx Fallback Bus")
+  undo.AddEntity(ent)
+  undo.SetPlayer(ply)
+  undo.Finish()
+  return ent
+end
+
+function ENT:PreEntityCopy()
+  local d = {
+    trim = self:GetTrim(), label = self:GetBusLabel(), flat = self:GetFlat2D(),
+  }
+  -- The mixer this bus is patched into, and the wires that patch it.
+  NTx.DupeStore(self, "NtxFallback", d)
+end
+
+function ENT:PostEntityPaste(ply, ent, created)
+  local d = ent.EntityMods and ent.EntityMods.NtxFallback
+  if d then
+    self:SetTrim(NTx.ClampFader(d.trim))
+    self:SetBusLabel(string.sub(tostring(d.label or ""), 1, 32))
+    self:SetFlat2D(d.flat == true)
+  end
+  -- The wires and the mixer link that come out of them.
+  NTx.DupeRestore(ply, self, created, d)
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or (1 / 60)))
+  self:UpdateSignal()
+end

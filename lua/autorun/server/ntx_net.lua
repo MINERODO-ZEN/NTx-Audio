@@ -438,8 +438,17 @@ end
 local function applyFields(ply, kind, ent, pairsCount)
   for _ = 1, pairsCount do
     local name = net.ReadString()
-    local value = net.ReadFloat()
+    -- The field says what its value IS, and both realms read this same table,
+    -- so the encoding is never guessed: a string field is read as a string and
+    -- everything else as a float. Before this, a string field rode a float
+    -- path and came out as a number.
     local entry = (kind == "amp") and NTx.AmpField(name) or NTx.SpkField(name)
+    local value
+    if entry and entry.isString then
+      value = net.ReadString()
+    else
+      value = net.ReadFloat()
+    end
     -- A profile that owns a spec owns it server-side too. Hiding the row in the
     -- panel is cosmetic; without this a crafted message still sets it, and the
     -- whole point is that the datasheet figure is the one that runs.
@@ -470,7 +479,26 @@ local function applyFields(ply, kind, ent, pairsCount)
 end
 
 net.Receive("NTx.AmpEdit", function(_, ply)
-  local amp = net.ReadEntity()
+  local ent = net.ReadEntity()
+  -- The kind is read before the entity is judged. A cabinet edit carries the
+  -- CABINET as the first entity, and asking for an amplifier first rejected
+  -- every one of them - and returned before reading the rest of the message,
+  -- which left the net stream out of step and made the NEXT message read
+  -- garbage.
+  local kind = net.ReadString()
+
+  if kind == "spkset" then
+    if not IsValid(ent) or ent:GetClass() ~= "ntx_speaker" then return end
+    if not canEdit(ply, ent) then
+      ply:ChatPrint("[NTx] Cannot edit cabinet [" .. ent:EntIndex() .. "]: "
+        .. (editRefusal(ply, ent) or "not permitted"))
+      return
+    end
+    applyFields(ply, "spk", ent, net.ReadUInt(5))
+    return
+  end
+
+  local amp = ent
   if not IsValid(amp) or amp:GetClass() ~= "ntx_amplifier" then
     if IsValid(ply) then ply:ChatPrint("[NTx] Rejected: not an amplifier.") end
     return
@@ -480,19 +508,9 @@ net.Receive("NTx.AmpEdit", function(_, ply)
       .. (editRefusal(ply, amp) or "not permitted"))
     return
   end
-  local kind = net.ReadString()
 
   if kind == "set" then
     applyFields(ply, "amp", amp, net.ReadUInt(5))
-  elseif kind == "spkset" then
-    local spk = net.ReadEntity()
-    if not IsValid(spk) or spk:GetClass() ~= "ntx_speaker" then return end
-    if not canEdit(ply, spk) then
-      ply:ChatPrint("[NTx] Cannot edit cabinet [" .. spk:EntIndex() .. "]: "
-        .. (editRefusal(ply, spk) or "not permitted"))
-      return
-    end
-    applyFields(ply, "spk", spk, net.ReadUInt(5))
   elseif kind == "cliplatch" then
     amp:SetClipLatch(false)
   elseif kind == "profile" then

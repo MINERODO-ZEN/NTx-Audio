@@ -66,7 +66,26 @@ local function buildFields(parent, ent, fields, getter, sender)
       local value = getter(entry.name)
       local isBool = entry.min == 0 and entry.max == 1
       local ctl
-      if isBool then
+      if entry.choices then
+        -- A field with a fixed set of values is a dropdown, not a slider: a
+        -- speaker type is MID or SUB, and a slider that says 0 to 1 makes the
+        -- reader do the mapping.
+        ctl = vgui.Create("DComboBox", r)
+        ctl:Dock(FILL)
+        for _, ch in ipairs(entry.choices) do comboAdd(ctl, ch[1], ch[2]) end
+        comboPick(ctl, value)
+        ctl.OnSelect = function()
+          local v = comboGet(ctl)
+          if v ~= nil then sender(entry.name, v) end
+        end
+      elseif entry.isString then
+        ctl = vgui.Create("DTextEntry", r)
+        ctl:Dock(FILL)
+        ctl:SetText(tostring(value or ""))
+        -- On enter, not on every keystroke: a half-typed array id is not a
+        -- value the server should be handed.
+        ctl.OnEnter = function() sender(entry.name, ctl:GetValue()) end
+      elseif isBool then
         ctl = vgui.Create("DCheckBoxLabel", r)
         ctl:SetText("")
         ctl:SetValue((tonumber(value) or 0) > 0.5)
@@ -99,12 +118,21 @@ end
 
 local function spkSender(spk)
   return function(name, value)
+    -- The field says what its value is, and the server reads the same table,
+    -- so a string field is written as a string and everything else as a
+    -- float. The cabinet is the first entity: the receiver looks at the kind
+    -- before it judges what it was sent.
+    local entry = NTx.SpkField(name)
     net.Start("NTx.AmpEdit")
     net.WriteEntity(spk)
     net.WriteString("spkset")
     net.WriteUInt(1, 5)
     net.WriteString(name)
-    net.WriteFloat(value)
+    if entry and entry.isString then
+      net.WriteString(tostring(value))
+    else
+      net.WriteFloat(tonumber(value) or 0)
+    end
     net.SendToServer()
   end
 end
@@ -472,6 +500,12 @@ function NTx.OpenCabinetUI(spk)
   local plbl = label(prow, "Profile")
   plbl:SetWide(110)
   plbl:Dock(LEFT)
+  -- The Load button is docked before the dropdown, so it sits at the right of
+  -- the row and the dropdown takes what is left.
+  local load = vgui.Create("DButton", prow)
+  load:SetText("Load")
+  load:SetWide(64)
+  load:Dock(RIGHT)
   local combo = vgui.Create("DComboBox", prow)
   combo:Dock(FILL)
   -- The dropdown is rebuilt when the server pushes the list, so a profile
@@ -489,7 +523,9 @@ function NTx.OpenCabinetUI(spk)
     listVersion = NTx.SpkListVersion or 0
   end
   refreshProfiles()
-  combo.OnSelect = function()
+  -- Choosing a profile does not apply it. The Load button does, so a click
+  -- that lands on the wrong option cannot change the cabinet.
+  load.DoClick = function()
     local p = NTx.SpeakerProfileById(tostring(comboGet(combo) or ""))
     if not p then return end
     NTx.ApplySpeakerProfile(spk, p)
@@ -497,6 +533,12 @@ function NTx.OpenCabinetUI(spk)
   label(scroll, "* = saved profile (shared with the server)", COL_DIM, 16):Dock(TOP)
 
   local function spkGetter(name)
+    if name == "stype" then return spk:GetSpeakerType() == "SUB" and 1 or 0 end
+    if name == "arrayid" then return spk:GetArrayId() end
+    if name == "hifov" then return spk:GetMidHFov() end
+    if name == "vifov" then return spk:GetMidVFov() end
+    if name == "reversed" then return spk:GetReversed() and 1 or 0 end
+    if name == "selfcard" then return spk:GetSelfCardioid() and 1 or 0 end
     if name == "imp" then return spk:GetImpedance() end
     if name == "rmsw" then return spk:GetRmsW() end
     if name == "peakw" then return spk:GetPeakW() end
@@ -508,11 +550,11 @@ function NTx.OpenCabinetUI(spk)
     return nil
   end
 
-  local numeric = {}
+  local fields = {}
   for _, entry in ipairs(NTx.SpkFields) do
-    if entry.name ~= "profile" and entry.label ~= "" then numeric[#numeric + 1] = entry end
+    if entry.name ~= "profile" and entry.label ~= "" then fields[#fields + 1] = entry end
   end
-  buildFields(scroll, spk, numeric, spkGetter, spkSender(spk))
+  buildFields(scroll, spk, fields, spkGetter, spkSender(spk))
 
   -- Link row.
   local lrow = row(scroll, 28)

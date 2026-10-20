@@ -769,8 +769,22 @@ end
 -- setter. The net receiver looks names up here and applies them itself, so a
 -- hand-crafted packet cannot write a negative channel count or a 40 000 W
 -- amplifier; anything not in this list is ignored.
-local function f(name, minv, maxv, step, label, set)
-  return { name = name, min = minv, max = maxv, step = step or 1, label = label, set = set }
+local function f(name, minv, maxv, step, label, set, choices)
+  return {
+    name = name, min = minv, max = maxv, step = step or 1,
+    label = label, set = set, choices = choices,
+  }
+end
+
+-- A field whose value is a string rather than a number: the array id, and the
+-- profile id.
+--
+-- The table says what a value IS, and both realms read the same table, so the
+-- encoding is never guessed: a string field is written and read as a string,
+-- everything else as a float. Before this, a string field rode a float path
+-- and came out as a number.
+local function fs(name, label, set)
+  return { name = name, label = label, set = set, isString = true }
 end
 
 -- Some fields have no sensible single control. busmask is a bitfield: as a raw
@@ -819,7 +833,16 @@ end
 
 -- Same idea for cabinets, minus the settings a client has no business touching.
 NTx.SpkFields = {
-  f("profile", 0, 0, 1, "Profile", function(s, v) local id = tostring(v); if NTx.SpeakerProfile(id) or NTx.SavedSpeakerProfile(id) then s:ApplySpeakerProfile(id) end end),
+  fs("profile", "Profile", function(s, v) local id = tostring(v); if NTx.SpeakerProfile(id) or NTx.SavedSpeakerProfile(id) then s:ApplySpeakerProfile(id) end end),
+  -- The type is a string on the entity and a number here, so the field can
+  -- ride the ordinary numeric path and the panel can show a dropdown.
+  f("stype", 0, 1, 1, "Speaker type", function(s, v) s:SetSpeakerType(v > 0.5 and "SUB" or "MID") end,
+    { { "MID", 0 }, { "SUB", 1 } }),
+  fs("arrayid", "Array ID", function(s, v) s:SetArrayId(string.sub(tostring(v), 1, 32)) end),
+  f("hifov", 5, 360, 1, "MID H-FOV (deg)", function(s, v) s:SetMidHFov(math.Clamp(v, 5, 360)) end),
+  f("vifov", 5, 360, 1, "MID V-FOV (deg)", function(s, v) s:SetMidVFov(math.Clamp(v, 5, 360)) end),
+  f("reversed", 0, 1, 1, "Rear polarity", function(s, v) s:SetReversed(v > 0.5) end),
+  f("selfcard", 0, 1, 1, "Self-cardioid", function(s, v) s:SetSelfCardioid(v > 0.5) end),
   f("imp", 0.1, 100000, 0.5, "Impedance", function(s, v) s:SetImpedance(math.Clamp(v, 0.1, 100000)) end),
   f("rmsw", 0, 100000, 5, "RMS watts", function(s, v) s:SetRmsW(math.Clamp(v, 0, 100000)) end),
   f("peakw", 0, 200000, 5, "Peak watts", function(s, v) s:SetPeakW(math.Clamp(v, 0, 200000)) end),
