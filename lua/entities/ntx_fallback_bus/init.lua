@@ -8,7 +8,13 @@ function ENT:Initialize()
   -- level - and the mixer, the amplifier's input and the cabinets all
   -- inherited that rate. It looked like a slow measurement; it was a sleeping
   -- prop. These entities are the signal path, so they have to keep running.
-  if self.SetNeverSleep then self:SetNeverSleep(true) end
+  if self.SetNeverSleep then
+    self:SetNeverSleep(true)
+  else
+    -- Said out loud rather than skipped: a missing method means the entity can
+    -- still be put to sleep, and the level stops with it.
+    print("[NTx] " .. self:GetClass() .. ": SetNeverSleep is not available")
+  end
   self:SetModel("models/hunter/blocks/cube025x025x025.mdl")
   self:SetMaterial("models/debug/debugwhite")
   self:SetColor(Color(200, 120, 20, 140))

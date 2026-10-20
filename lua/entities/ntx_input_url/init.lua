@@ -8,7 +8,13 @@ function ENT:Initialize()
   -- level - and the mixer, the amplifier's input and the cabinets all
   -- inherited that rate. It looked like a slow measurement; it was a sleeping
   -- prop. These entities are the signal path, so they have to keep running.
-  if self.SetNeverSleep then self:SetNeverSleep(true) end
+  if self.SetNeverSleep then
+    self:SetNeverSleep(true)
+  else
+    -- Said out loud rather than skipped: a missing method means the entity can
+    -- still be put to sleep, and the level stops with it.
+    print("[NTx] " .. self:GetClass() .. ": SetNeverSleep is not available")
+  end
   self:SetModel("models/props_lab/reciever01a.mdl")
   self:PhysicsInit(SOLID_VPHYSICS)
   self:SetMoveType(MOVETYPE_VPHYSICS)
@@ -106,6 +112,11 @@ function ENT:Think()
     self.ChangeBase = changedCount
     self.ThinkBase = thinkCount
   end
+  -- How long since the engine last called this. A gap much longer than the
+  -- interval means the engine is calling it LATE - a throttled or sleeping
+  -- entity - rather than the entity being slow.
+  if self.LastThinkAt then self.ThinkGap = now - self.LastThinkAt end
+  self.LastThinkAt = now
   self.ThinkCount = thinkCount + 1
   -- Publish on a SCHEDULE, not only when the value changes.
   --
