@@ -74,7 +74,10 @@ function NTx.CollectGraph()
       -- programme instead of its bus, and a cabinet on channel 1 did it
       -- whatever bus that channel was carrying. The wiring answers both
       -- questions, and it is the same wiring the simulation uses.
-      local amp = IsValid(e.GetAmp) and e:GetAmp() or nil
+      -- The method's existence is checked, not the method: IsValid wants an
+      -- entity, and handing it a function throws inside CollectGraph - which
+      -- empties the whole graph, and with it every level in the rig.
+      local amp = e.GetAmp and e:GetAmp() or nil
       local ch, bus = 0, nil
       if IsValid(amp) and amp:GetClass() == "ntx_amplifier" then
         ch = NTx.AmpSpeakerChannel(amp, e)

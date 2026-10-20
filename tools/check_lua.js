@@ -237,6 +237,22 @@ function lint(name, src, ast) {
     }
   }
 
+  // IsValid wants an entity. Handing it a METHOD - `IsValid(ent.GetAmp)` -
+  // indexes a function and throws inside whatever called it, which here meant
+  // the whole rig graph was collected wrong and every level read 1. The
+  // method's existence is checked with `and` instead.
+  //
+  // A member name alone cannot tell a method from a field, so the name has to
+  // be used as a call somewhere in the same file to count as a method.
+  const isValidMethod = /IsValid\(\s*[A-Za-z_][\w.]*\.([A-Z][\w]*)\s*\)/g;
+  let ivm;
+  while ((ivm = isValidMethod.exec(code)) !== null) {
+    const called = new RegExp(":" + ivm[1] + "\\s*\\(").test(code);
+    if (called) {
+      return `${name}:${lineOf(ivm.index)} IsValid(${ivm[1]}) is a method, not an entity - check it with "and" instead`;
+    }
+  }
+
   // A function used at file scope before it is defined is nil at that point,
   // and calling it aborts the whole file - taking every definition after it
   // with it. Lua has no forward declarations, so the order in the file IS the
