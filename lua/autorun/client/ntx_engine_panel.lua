@@ -235,11 +235,8 @@ local function buildAmpContents(panel)
     local del = vgui.Create("DButton", panel)
     del:SetText("Delete")
     del.DoClick = function()
-      net.Start("NTx.SpkProfile")
-      net.WriteString("delete")
-      net.WriteEntity(NULL)
-      net.WriteString(id)
-      net.SendToServer()
+      -- The profiles are the client's own; the server never had a copy.
+      NTx.DeleteSpeakerProfile(id)
     end
     panel:AddItem(left, del)
   end

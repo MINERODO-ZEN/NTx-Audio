@@ -18,7 +18,6 @@ util.AddNetworkString("NTx.AmpSync")
 util.AddNetworkString("NTx.AmpEdit")
 util.AddNetworkString("NTx.AmpLink")
 util.AddNetworkString("NTx.AmpUnlink")
-util.AddNetworkString("NTx.SpkList")
 util.AddNetworkString("NTx.SpkProfile")
 util.AddNetworkString("NTx.CvarSet")
 util.AddNetworkString("NTx.AmplifierEditAll")
@@ -603,114 +602,33 @@ end)
 
 -- ------------------------------------------------- speaker profile storage
 
--- Server owned on purpose: DATA is shared for the whole server, so a profile
--- saved by one builder shows up for everyone instead of living in one client's
--- folder. Names are sanitised and the table is capped before it ever touches
--- the disk.
-local PROFILE_FILE = "ntx_rig_speakers.json"
-local MAX_SAVED = 64
-
-local function loadProfiles()
-  NTx.SavedSpeakerProfiles = NTx.SavedSpeakerProfiles or {}
-  local raw = file.Read(PROFILE_FILE, "DATA")
-  if not raw or raw == "" then return end
-  local decoded = nil
-  pcall(function() decoded = util.JSONToTable(raw) end)
-  if not istable(decoded) then return end
-  for id, p in pairs(decoded) do
-    if istable(p) and NTx.SpkSanitiseName(p.name or "") ~= "" then
-      NTx.SavedSpeakerProfiles[tostring(id)] = {
-        id = tostring(id), name = NTx.SpkSanitiseName(p.name),
-        stype = (p.stype == "SUB") and "SUB" or "MID",
-        ohm = math.Clamp(tonumber(p.ohm) or 8, 0.1, 100000),
-        rmsW = math.Clamp(tonumber(p.rmsW) or 100, 0, 100000),
-        peakW = math.Clamp(tonumber(p.peakW) or 200, 0, 200000),
-        minAmpW = math.Clamp(tonumber(p.minAmpW) or 50, 0, 100000),
-        tapVolt = math.Clamp(math.floor(tonumber(p.tapVolt) or 0), 0, 240),
-        hifov = math.Clamp(tonumber(p.hifov) or 120, 5, 360),
-        vifov = math.Clamp(tonumber(p.vifov) or 120, 5, 360),
-        saved = true,
-      }
-    end
-  end
-end
-
-function NTx.SaveSpeakerProfileFile()
-  local out = {}
-  for id, p in pairs(NTx.SavedSpeakerProfiles) do out[id] = p end
-  file.Write(PROFILE_FILE, util.TableToJSON(out), "DATA")
-end
-
-function NTx.SendSpeakerProfiles(target)
-  net.Start("NTx.SpkList")
-  local ids = {}
-  for id in pairs(NTx.SavedSpeakerProfiles) do ids[#ids + 1] = id end
-  table.sort(ids)
-  net.WriteUInt(#ids, 6)
-  for _, id in ipairs(ids) do
-    local p = NTx.SavedSpeakerProfiles[id]
-    net.WriteString(p.name or id)
-    net.WriteString(p.stype or "MID")
-    net.WriteFloat(p.ohm or 8)
-    net.WriteFloat(p.rmsW or 100)
-    net.WriteFloat(p.peakW or 200)
-    net.WriteFloat(p.minAmpW or 50)
-    net.WriteFloat(p.tapVolt or 0)
-  end
-  if target then net.Send(target) else net.Broadcast() end
-end
-
+-- The saved speaker profiles live in the CLIENT's own data folder: a profile
+-- is a cabinet the player built, and it belongs to the player who built it.
+-- The server never stores them and never writes a file for them - it is told
+-- the values when one is applied to a cabinet.
 net.Receive("NTx.SpkProfile", function(_, ply)
   local kind = net.ReadString()
-  if kind == "list" then
-    NTx.SendSpeakerProfiles(ply)
+  if kind ~= "apply" then return end
+  local spk = net.ReadEntity()
+  if not IsValid(spk) or spk:GetClass() ~= "ntx_speaker" then return end
+  if not canEdit(ply, spk) then
+    ply:ChatPrint("[NTx] You cannot edit that cabinet.")
     return
   end
-  local spk = net.ReadEntity()
-  if kind == "save" then
-    local name = NTx.SpkSanitiseName(net.ReadString())
-    if name == "" then return end
-    if not IsValid(spk) then return end
-    local count = 0
-    for _ in pairs(NTx.SavedSpeakerProfiles) do count = count + 1 end
-    if count >= MAX_SAVED then
-      ply:ChatPrint("[NTx] Speaker profile limit reached (" .. MAX_SAVED .. ").")
-      return
-    end
-    -- Saving a cabinet you do not own would let anyone litter the shared file.
-    if not canEdit(ply, spk) then return end
-    local id = NTx.SpkMakeId(name)
-    if id == "" then return end
-    NTx.SavedSpeakerProfiles[id] = {
-      id = id, name = name, stype = spk:GetSpeakerType(), ohm = spk:GetImpedance(),
-      rmsW = spk:GetRmsW(), peakW = spk:GetPeakW(), minAmpW = spk:GetMinAmpW(),
-      tapVolt = spk:GetTapVolt(), hifov = spk:GetMidHFov(), vifov = spk:GetMidVFov(), saved = true,
-    }
-    NTx.SaveSpeakerProfileFile()
-    NTx.SendSpeakerProfiles()
-    spk:SetProfile(id)
-    ply:ChatPrint("[NTx] Saved speaker profile \"" .. name .. "\".")
-  elseif kind == "apply" then
-    if not IsValid(spk) then return end
-    if not canEdit(ply, spk) then return end
-    local id = tostring(net.ReadString() or "")
-    local p = NTx.SpeakerProfileById(id)
-    if p then spk:ApplySpeakerProfile(id) end
-  elseif kind == "delete" then
-    local id = tostring(net.ReadString() or "")
-    if NTx.SavedSpeakerProfiles[id] then
-      NTx.SavedSpeakerProfiles[id] = nil
-      NTx.SaveSpeakerProfileFile()
-      NTx.SendSpeakerProfiles()
-    end
-  end
+  local id = tostring(net.ReadString() or "")
+  local stype = net.ReadString()
+  local ohm, rmsW, peakW = net.ReadFloat(), net.ReadFloat(), net.ReadFloat()
+  local minAmpW, tapV = net.ReadFloat(), net.ReadFloat()
+  local hifov, vifov = net.ReadFloat(), net.ReadFloat()
+  spk:ApplySpeakerProfileData({
+    id = id, stype = stype, ohm = ohm, rmsW = rmsW, peakW = peakW,
+    minAmpW = minAmpW, tapVolt = tapV, hifov = hifov, vifov = vifov,
+  })
+  if NTx.BroadcastGraph then NTx.BroadcastGraph() end
 end)
-
-loadProfiles()
 
 net.Receive("NTx.RequestSync", function(_, ply)
   NTx.BroadcastGraph(ply)
-  NTx.SendSpeakerProfiles(ply)
 end)
 
 -- Client -> server mixer edits. Full validation: entity, ownership, ranges.

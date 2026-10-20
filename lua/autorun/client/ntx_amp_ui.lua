@@ -490,11 +490,9 @@ function NTx.OpenCabinetUI(spk)
   end
   refreshProfiles()
   combo.OnSelect = function()
-    net.Start("NTx.SpkProfile")
-    net.WriteString("apply")
-    net.WriteEntity(spk)
-    net.WriteString(tostring(comboGet(combo) or ""))
-    net.SendToServer()
+    local p = NTx.SpeakerProfileById(tostring(comboGet(combo) or ""))
+    if not p then return end
+    NTx.ApplySpeakerProfile(spk, p)
   end
   label(scroll, "* = saved profile (shared with the server)", COL_DIM, 16):Dock(TOP)
 
@@ -579,26 +577,17 @@ function NTx.OpenCabinetUI(spk)
       hint:SetText("that one is built in")
       return
     end
-    net.Start("NTx.SpkProfile")
-    net.WriteString("delete")
-    net.WriteEntity(NULL)
-    net.WriteString(id)
-    net.SendToServer()
+    NTx.DeleteSpeakerProfile(id)
     hint:SetText("")
   end
   save.DoClick = function()
-    local name = NTx.SpkSanitiseName(entry:GetValue())
     -- The server drops an empty name without a word, which looks like the
     -- button did nothing at all.
-    if name == "" then
-      hint:SetText("give the profile a name first")
+    local ok, err = NTx.SaveSpeakerProfile(spk, entry:GetValue())
+    if not ok then
+      hint:SetText(tostring(err))
       return
     end
-    net.Start("NTx.SpkProfile")
-    net.WriteString("save")
-    net.WriteEntity(spk)
-    net.WriteString(name)
-    net.SendToServer()
     entry:SetText("")
     hint:SetText("")
   end
@@ -644,27 +633,112 @@ concommand.Add("ntx_amp_fault", function(_, _, args)
 end)
 
 -- --------------------------------------------------- saved speaker profiles
+--
+-- The saved profiles live in the CLIENT's own data folder. A profile is a
+-- cabinet the player built, so it belongs to the player who built it, and the
+-- server is never asked to hold it. The server is told the VALUES when one is
+-- applied to a cabinet; it keeps no copy and writes no file.
+local PROFILE_FILE = "ntx_spk_speakers.json"
+local MAX_SAVED = 64
 
--- The list lives on the server (garrysmod/data) so a profile is shared; this
--- receiver keeps the local copy the dropdowns and the Utilities page read from.
-net.Receive("NTx.SpkList", function()
-  NTx.SavedSpeakerProfiles = {}
-  local n = net.ReadUInt(6)
-  for _ = 1, n do
-    local name, stype = net.ReadString(), net.ReadString()
-    local ohm, rmsW, peakW, minAmpW, tapV = net.ReadFloat(), net.ReadFloat(),
-      net.ReadFloat(), net.ReadFloat(), net.ReadFloat()
-    local id = NTx.SpkMakeId(name)
-    if id ~= "" then
-      NTx.SavedSpeakerProfiles[id] = {
-        id = id, name = name, stype = stype, ohm = ohm, rmsW = rmsW,
-        peakW = peakW, minAmpW = minAmpW, tapVolt = tapV, saved = true,
+-- The shared file declares this table, but the load order of the autorun files
+-- is not fixed, so it is claimed here too: whichever runs first makes it.
+NTx.SavedSpeakerProfiles = NTx.SavedSpeakerProfiles or {}
+
+-- Bumped whenever the list changes, so an open cabinet window knows its
+-- dropdown is out of date.
+NTx.SpkListVersion = 0
+
+local function bumpProfiles()
+  NTx.SpkListVersion = NTx.SpkListVersion + 1
+end
+
+local function loadProfiles()
+  local raw = file.Read(PROFILE_FILE, "DATA")
+  if not raw or raw == "" then return end
+  local decoded = nil
+  pcall(function() decoded = util.JSONToTable(raw) end)
+  if not istable(decoded) then return end
+  for id, p in pairs(decoded) do
+    if istable(p) and NTx.SpkSanitiseName(p.name or "") ~= "" then
+      NTx.SavedSpeakerProfiles[tostring(id)] = {
+        id = tostring(id), name = NTx.SpkSanitiseName(p.name),
+        stype = (p.stype == "SUB") and "SUB" or "MID",
+        ohm = math.Clamp(tonumber(p.ohm) or 8, 0.1, 100000),
+        rmsW = math.Clamp(tonumber(p.rmsW) or 100, 0, 100000),
+        peakW = math.Clamp(tonumber(p.peakW) or 200, 0, 200000),
+        minAmpW = math.Clamp(tonumber(p.minAmpW) or 50, 0, 100000),
+        tapVolt = math.Clamp(math.floor(tonumber(p.tapVolt) or 0), 0, 240),
+        hifov = math.Clamp(tonumber(p.hifov) or 120, 5, 360),
+        vifov = math.Clamp(tonumber(p.vifov) or 120, 5, 360),
+        saved = true,
       }
     end
   end
-  -- Bumped so an open cabinet window knows its dropdown is out of date.
-  NTx.SpkListVersion = (NTx.SpkListVersion or 0) + 1
-end)
+end
+
+local function saveProfileFile()
+  local out = {}
+  for id, p in pairs(NTx.SavedSpeakerProfiles) do out[id] = p end
+  file.Write(PROFILE_FILE, util.TableToJSON(out), "DATA")
+end
+
+loadProfiles()
+
+-- Asks the server to put a profile on a cabinet. The values go with it: the
+-- saved profiles are the client's, and the server has none to look up.
+function NTx.ApplySpeakerProfile(spk, p)
+  if not IsValid(spk) or not istable(p) then return false end
+  net.Start("NTx.SpkProfile")
+  net.WriteString("apply")
+  net.WriteEntity(spk)
+  net.WriteString(tostring(p.id or ""))
+  net.WriteString(p.stype or "MID")
+  net.WriteFloat(p.ohm or 8)
+  net.WriteFloat(p.rmsW or 100)
+  net.WriteFloat(p.peakW or 200)
+  net.WriteFloat(p.minAmpW or 50)
+  net.WriteFloat(p.tapVolt or 0)
+  net.WriteFloat(p.hifov or 120)
+  net.WriteFloat(p.vifov or 120)
+  net.SendToServer()
+  return true
+end
+
+-- Saves the cabinet as a profile in the client's own folder, and puts it on
+-- the cabinet so what was saved is what the cabinet now is.
+function NTx.SaveSpeakerProfile(spk, name)
+  if not IsValid(spk) then return false, "no cabinet" end
+  local clean = NTx.SpkSanitiseName(name)
+  if clean == "" then return false, "give the profile a name first" end
+  local count = 0
+  for _ in pairs(NTx.SavedSpeakerProfiles) do count = count + 1 end
+  if count >= MAX_SAVED then return false, "profile limit reached (" .. MAX_SAVED .. ")" end
+  local id = NTx.SpkMakeId(clean)
+  if id == "" then return false, "that name cannot be used" end
+  local p = {
+    id = id, name = clean, stype = spk:GetSpeakerType(),
+    ohm = spk:GetImpedance(), rmsW = spk:GetRmsW(), peakW = spk:GetPeakW(),
+    minAmpW = spk:GetMinAmpW(), tapVolt = spk:GetTapVolt(),
+    hifov = spk:GetMidHFov(), vifov = spk:GetMidVFov(), saved = true,
+  }
+  NTx.SavedSpeakerProfiles[id] = p
+  saveProfileFile()
+  bumpProfiles()
+  NTx.ApplySpeakerProfile(spk, p)
+  return true
+end
+
+-- Removes a profile from the client's folder. Nothing goes to the server: the
+-- server never had a copy.
+function NTx.DeleteSpeakerProfile(id)
+  id = tostring(id or "")
+  if not NTx.SavedSpeakerProfiles[id] then return false end
+  NTx.SavedSpeakerProfiles[id] = nil
+  saveProfileFile()
+  bumpProfiles()
+  return true
+end
 
 -- Everything the Utilities page does with a profile, and the console verbs for
 -- the same job. The entity defaults to whatever the player is looking at, which
@@ -681,40 +755,29 @@ end
 concommand.Add("ntx_spk_save", function(_, _, args)
   local spk = aimedSpeaker()
   if not spk then print("[NTx] aim at a ntx_speaker first") return end
-  local name = NTx.SpkSanitiseName(table.concat(args, " "))
-  if name == "" then print("[NTx] usage: ntx_spk_save <name>") return end
-  net.Start("NTx.SpkProfile")
-  net.WriteString("save")
-  net.WriteEntity(spk)
-  net.WriteString(name)
-  net.SendToServer()
+  local name = table.concat(args, " ")
+  local ok, err = NTx.SaveSpeakerProfile(spk, name)
+  if ok then print("[NTx] saved speaker profile \"" .. name .. "\"")
+  else print("[NTx] " .. tostring(err)) end
 end)
 
 concommand.Add("ntx_spk_apply", function(_, _, args)
   local spk = aimedSpeaker()
   local id = table.concat(args, " ")
   if not spk or id == "" then print("[NTx] usage: aim at a ntx_speaker, then ntx_spk_apply <profile id>") return end
-  net.Start("NTx.SpkProfile")
-  net.WriteString("apply")
-  net.WriteEntity(spk)
-  net.WriteString(id)
-  net.SendToServer()
+  local p = NTx.SpeakerProfileById(id)
+  if not p then print("[NTx] no such profile: " .. id) return end
+  NTx.ApplySpeakerProfile(spk, p)
 end)
 
 concommand.Add("ntx_spk_del", function(_, _, args)
   local id = table.concat(args, " ")
   if id == "" then print("[NTx] usage: ntx_spk_del <profile id>") return end
-  net.Start("NTx.SpkProfile")
-  net.WriteString("delete")
-  net.WriteEntity(NULL)
-  net.WriteString(id)
-  net.SendToServer()
+  if NTx.DeleteSpeakerProfile(id) then print("[NTx] deleted profile " .. id)
+  else print("[NTx] no such profile: " .. id) end
 end)
 
 concommand.Add("ntx_spk_list", function()
-  net.Start("NTx.SpkProfile")
-  net.WriteString("list")
-  net.SendToServer()
   print("[NTx] built-in profiles: " .. table.concat(NTx.SpeakerProfileIds(), ", "))
   local saved = {}
   for id in pairs(NTx.SavedSpeakerProfiles) do saved[#saved + 1] = id end

@@ -46,20 +46,30 @@ end
 -- Electrical stamp from a speaker profile. Kept on the entity so the tool, the
 -- Utilities page and the duplicator all land on the same code path.
 function ENT:ApplySpeakerProfile(id)
-  -- ById, not SpeakerProfile: a saved profile lives in the server's table, not
+  -- ById, not SpeakerProfile: a saved profile lives in the CLIENT's table, not
   -- in the built-in one, and looking it up in the wrong place is what made
   -- "load this profile I saved" do nothing at all.
   local p = NTx.SpeakerProfileById(id)
   if not p then return false end
-  self:SetProfile(p.id)
-  self:SetSpeakerType(p.stype or self:GetSpeakerType())
-  self:SetImpedance(p.ohm or 8)
-  self:SetRmsW(p.rmsW or 100)
-  self:SetPeakW(p.peakW or (p.rmsW or 100) * 2)
-  self:SetMinAmpW(p.minAmpW or 50)
-  self:SetTapVolt(math.floor(tonumber(p.tapVolt) or 0))
-  if p.hifov then self:SetMidHFov(p.hifov) end
-  if p.vifov then self:SetMidVFov(p.vifov) end
+  return self:ApplySpeakerProfileData(p)
+end
+
+-- The stamp from a profile's VALUES rather than from an id.
+--
+-- The saved profiles live in the client's own folder, so the server has no
+-- copy to look up: the client sends the values and the server puts them on the
+-- cabinet. The values are clamped here because they come from the client.
+function ENT:ApplySpeakerProfileData(p)
+  if not istable(p) then return false end
+  self:SetProfile(tostring(p.id or ""))
+  self:SetSpeakerType(NTx.IsSpeakerType(p.stype) and p.stype or self:GetSpeakerType())
+  self:SetImpedance(math.Clamp(tonumber(p.ohm) or 8, 0.1, 100000))
+  self:SetRmsW(math.Clamp(tonumber(p.rmsW) or 100, 0, 100000))
+  self:SetPeakW(math.Clamp(tonumber(p.peakW) or (tonumber(p.rmsW) or 100) * 2, 0, 200000))
+  self:SetMinAmpW(math.Clamp(tonumber(p.minAmpW) or 50, 0, 100000))
+  self:SetTapVolt(math.Clamp(math.floor(tonumber(p.tapVolt) or 0), 0, 240))
+  if p.hifov then self:SetMidHFov(math.Clamp(tonumber(p.hifov) or 152, 5, 360)) end
+  if p.vifov then self:SetMidVFov(math.Clamp(tonumber(p.vifov) or 57, 5, 360)) end
   return true
 end
 
