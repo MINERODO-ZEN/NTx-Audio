@@ -140,6 +140,14 @@ function TOOL.BuildCPanel(panel)
     Label = "Link lines (input / mixer / speaker / amplifier wiring)",
     Command = "ntx_gizmo_links",
   })
+  panel:AddControl("CheckBox", {
+    Label = "Speaker gizmos (up + front arrows, labels)",
+    Command = "ntx_gizmo_speakers",
+  })
+  panel:AddControl("CheckBox", {
+    Label = "Coverage cones (H/V FOV outlines)",
+    Command = "ntx_gizmo_cones",
+  })
 end
 
 if CLIENT then
