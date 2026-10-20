@@ -211,7 +211,12 @@ function reportBands(){
     var bv=[];
     for(var i=0;i<BAND_KEYS.length;i++){
       var an=C.band[BAND_KEYS[i]];
-      bv.push(an?Math.round(analyserRms(an)*1000)/1000:0);
+      // Six decimals, not three. The value is quantised, and a source only
+      // republishes when its number CHANGES - so at three decimals a steady
+      // programme produced the same figure for a fifth of a second at a time,
+      // and the mixer and the amplifier downstream only moved when it did.
+      // The whole chain ran at the rate the rounding allowed.
+      bv.push(an?Math.round(analyserRms(an)*1e6)/1e6:0);
     }
     // One level per BUS, in bus order, each already band-limited: this is what
     // the amplifier's load and meters read, so it has to carry the same shape
