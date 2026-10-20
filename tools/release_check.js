@@ -127,6 +127,43 @@ if (!fs.existsSync(matDir)) {
     }
   }
   if (!missing && !wrongCase) ok(`${checked} material(s), every one has its texture`);
+
+  // A texture with no material is a texture nothing can use, and a texture the
+  // model never mentions is weight in the archive for nothing.
+  head("textures and models");
+  const modelDir = path.join(SRC, "models");
+  if (fs.existsSync(modelDir)) {
+    const models = walk(modelDir).filter((f) => f.toLowerCase().endsWith(".mdl"));
+    const vtfByDir = new Map();
+    for (const f of all.filter((f) => f.toLowerCase().endsWith(".vtf"))) {
+      const dir = path.dirname(path.relative(matDir, f));
+      if (!vtfByDir.has(dir)) vtfByDir.set(dir, []);
+      vtfByDir.get(dir).push(f);
+    }
+    for (const f of vtfByDir.keys()) {
+      for (const t of vtfByDir.get(f)) {
+        const base = path.basename(t, ".vtf");
+        const vmt = path.join(matDir, f, base + ".vmt");
+        if (!fs.existsSync(vmt)) bad(`${path.relative(SRC, t)} has no material beside it`);
+      }
+    }
+    // The model names its textures, so a texture in its folder that it never
+    // mentions is weight in the archive for nothing.
+    for (const m of models) {
+      const rel = path.relative(modelDir, m);
+      const dir = path.dirname(rel);
+      const body = fs.readFileSync(m, "latin1");
+      const folder = vtfByDir.get(dir);
+      if (!folder) continue;
+      for (const t of folder) {
+        const base = path.basename(t, ".vtf");
+        if (!body.includes(base)) {
+          bad(`${path.relative(SRC, t)} is in ${dir} but no model there mentions it`);
+        }
+      }
+    }
+    ok(`${models.length} model(s), every texture beside one is used`);
+  }
 }
 
 // The version stamp is generated, so it is missing in the source by design.
