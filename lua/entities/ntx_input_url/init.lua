@@ -77,7 +77,17 @@ function ENT:Think()
     self.PublishAt = now
     self.PublishBase = n
   end
-  if changed then
+  -- Publish on a SCHEDULE, not only when the value changes.
+  --
+  -- A source that only republished on a change let the whole chain inherit
+  -- the rate its number happened to change at: the mixer republished when the
+  -- source did, and the amplifier's simulation only saw a new value when the
+  -- mixer did. The measurement was arriving every tick and the level was
+  -- still stepping. A level that is refreshed on a schedule cannot go stale,
+  -- whatever the reason it stopped changing.
+  local interval = NTx.SignalInterval and NTx.SignalInterval() or (1 / 66)
+  if changed or (now - (self.LastPublishAt or 0)) >= interval then
+    self.LastPublishAt = now
     self.PublishCount = n + 1
     -- A fresh table each time: Wiremod holds ARRAY values by reference, and
     -- mutating the one it already stores would not re-trigger the fan-out.
