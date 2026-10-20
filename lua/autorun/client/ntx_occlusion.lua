@@ -54,7 +54,24 @@ end
 local function traceClear(ent, from, to, spreadScale)
   local n = math.Clamp(cvRays:GetInt() or 48, 0, 128)
   if n <= 0 then return 1 end
-  local dist = from:Distance(to)
+  local delta = to - from
+  local dist = delta:Length()
+  if dist < 0.001 then return 1 end
+  local dir = delta / dist
+  -- The rays all END at the target and START spread around the source.
+  --
+  -- The first version spread the ENDS around the target, in a full sphere. The
+  -- ends landed inside whatever was next to the listener - the wall they were
+  -- standing against, mostly - and every ray that ended in a wall counted as
+  -- blocked. A cabinet in the open read as half occluded, and the MID
+  -- channels were lowpassed to a few kilohertz for it.
+  --
+  -- The target is the one point known to be in free space, so the bundle ends
+  -- there. The spread belongs at the source, where it reads as the size of
+  -- the thing doing the radiating.
+  local up = math.abs(dir.z) < 0.9 and Vector(0, 0, 1) or Vector(1, 0, 0)
+  local right = dir:Cross(up):GetNormalized()
+  up = right:Cross(dir):GetNormalized()
   -- A cabinet is a small target: a wide star would leak around its own edge
   -- and read a wall as clear. Buses get the wide spread below.
   local spread = math.Clamp(dist * spreadScale, 2, 96)
@@ -63,8 +80,8 @@ local function traceClear(ent, from, to, spreadScale)
   local tr = { mask = MASK_SOLID_BRUSHONLY }
   for i = 1, n do
     local d = SPHERE[(i + off - 1) % #SPHERE + 1]
-    tr.start = from
-    tr.endpos = to + d * spread
+    tr.start = from + (right * d.x + up * d.y) * spread
+    tr.endpos = to
     if util.TraceLine(tr).Fraction >= 1 then clear = clear + 1 end
   end
   return clear / n
@@ -97,7 +114,9 @@ function NTx.WallFactor(busEnt, busPos)
   local ply = LocalPlayer()
   if not IsValid(ply) or not IsValid(busEnt) then return 1 end
   local floor = math.Clamp(cvFloor:GetFloat() or 0.33, 0, 1)
-  local clear = clearFactor(busEnt, ply:EyePos(), busPos, 0.05)
+  -- The star belongs to the bus, not to the listener: the bus is the big
+  -- thing here, and the question is whether the listener can see any of it.
+  local clear = clearFactor(busEnt, busPos, ply:EyePos(), 0.05)
   return floor + (1 - floor) * clear
 end
 
