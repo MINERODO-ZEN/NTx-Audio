@@ -31,7 +31,12 @@ function ENT:Think()
   -- The signal chain's rate, not a tenth of a second: this is one of three
   -- stages the measured level passes through on its way to the amplifier, and
   -- at ten hertz the level arriving there only changed ten times a second.
-  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or 1 / 60))
+  -- The interval actually used, recorded so it can be reported. The entity
+  -- ticked at a fifth of the rate this asks for, and the only way to know
+  -- what the entity really got is to have the entity say.
+  local interval = NTx.SignalInterval and NTx.SignalInterval() or (1 / 60)
+  self.UsedInterval = interval
+  self:NextThink(CurTime() + interval)
   local vol = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
   -- A source with no URL cannot play, so it contributes NOTHING. The fallback
   -- below is the fader position, which for a source that is not playing at all
