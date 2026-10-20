@@ -542,6 +542,10 @@ function NTx.OpenCabinetUI(spk)
   -- Declared here and filled in lower down: the profile row needs to say what
   -- happened, and the label it says it in is docked to the frame's bottom.
   local hint
+  -- The same for the panel's refresh: the Load button is above the fields and
+  -- needs it, and a local declared after its use is a different variable - a
+  -- global, and nil.
+  local refreshFields
 
   local prow = row(scroll, 30)
   local plbl = label(prow, "Profile")
@@ -612,7 +616,7 @@ function NTx.OpenCabinetUI(spk)
   for _, entry in ipairs(NTx.SpkFields) do
     if entry.name ~= "profile" and entry.label ~= "" then fields[#fields + 1] = entry end
   end
-  local refreshFields = buildFields(scroll, spk, fields, spkGetter, spkSender(spk))
+  refreshFields = buildFields(scroll, spk, fields, spkGetter, spkSender(spk))
 
   -- Link row.
   local lrow = row(scroll, 28)
