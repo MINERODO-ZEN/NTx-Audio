@@ -99,22 +99,34 @@ if (!fs.existsSync(matDir)) {
   const all = walk(matDir);
   // A basetexture path is relative to the materials folder, not to the game
   // root: "minerodo/pioneer/x" is materials/minerodo/pioneer/x.vtf.
+  //
+  // The comparison is CASE SENSITIVE on purpose. Windows does not care, a
+  // Linux server does, and a texture that resolves on the machine that built
+  // the addon can still fail on the one that runs it.
   const textures = new Set(
     all.filter((f) => f.toLowerCase().endsWith(".vtf"))
-      .map((f) => path.relative(matDir, f).slice(0, -4).split(path.sep).join("/").toLowerCase())
+      .map((f) => path.relative(matDir, f).slice(0, -4).split(path.sep).join("/"))
   );
-  let checked = 0, missing = 0;
+  let checked = 0, missing = 0, wrongCase = 0;
   for (const f of all.filter((f) => f.toLowerCase().endsWith(".vmt"))) {
     const m = fs.readFileSync(f, "utf8").match(/\$basetexture\s+"([^"]+)"/i);
     if (!m) continue;
     checked++;
-    const want = m[1].toLowerCase();
+    const want = m[1];
     if (!textures.has(want)) {
-      missing++;
-      bad(`${path.relative(SRC, f)} names a texture that is not there: ${m[1]}`);
+      // Is it there, under a different case? Then it is a different file as
+      // far as the server is concerned.
+      const lower = new Set([...textures].map((t) => t.toLowerCase()));
+      if (lower.has(want.toLowerCase())) {
+        wrongCase++;
+        bad(`${path.relative(SRC, f)} names "${want}" but the file is spelled differently`);
+      } else {
+        missing++;
+        bad(`${path.relative(SRC, f)} names a texture that is not there: ${want}`);
+      }
     }
   }
-  if (!missing) ok(`${checked} material(s), every one has its texture`);
+  if (!missing && !wrongCase) ok(`${checked} material(s), every one has its texture`);
 }
 
 // The version stamp is generated, so it is missing in the source by design.
