@@ -590,6 +590,19 @@ function NTx.WebAudioOnStatus(pkey, json)
       NTx.PageRmsAt = now
       NTx.PageRmsBase = NTx.PageRmsCount
     end
+    -- How often the page's measurements arrive, and how many the page says
+    -- it has taken. Two different numbers: the first is what reached us, the
+    -- second is what the page did, and a gap between them means the bridge or
+    -- the gate is the problem.
+    local now = CurTime()
+    NTx.PageRmsCount = (NTx.PageRmsCount or 0) + 1
+    if not NTx.PageRmsAt or (now - NTx.PageRmsAt) >= 1 then
+      NTx.PageRmsRate = math.Round((NTx.PageRmsCount - (NTx.PageRmsBase or 0))
+        / math.max(now - (NTx.PageRmsAt or (now - 1)), 0.001), 1)
+      NTx.PageRmsAt = now
+      NTx.PageRmsBase = NTx.PageRmsCount
+    end
+    NTx.PageSamples = tonumber(r.n) or NTx.PageSamples
     NTx.PageRms[pkey] = {
       v = math.Clamp(tonumber(r.v) or 0, 0, 4),
       -- One level per bus, each already band-limited in the page. This is the

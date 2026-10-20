@@ -727,6 +727,8 @@ end)
 concommand.Add("ntx_leds_status", function()
   print(string.format("[NTx] meter messages: %d received, %s per second",
     NTx.MeterMsgCount or 0, tostring(NTx.MeterMsgRate or "?")))
+  print(string.format("[NTx] page measurements: %s per second received, page has taken %s samples",
+    tostring(NTx.PageRmsRate or "?"), tostring(NTx.PageSamples or "?")))
   print("[NTx] amplifier lamps:")
   local seen = 0
   for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do

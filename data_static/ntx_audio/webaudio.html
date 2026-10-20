@@ -217,12 +217,16 @@ function reportBands(){
     // the amplifier's load and meters read, so it has to carry the same shape
     // as the buses themselves. A MID channel is measured from the MID band,
     // not from the whole programme.
-    ntxReport({t:"rms",b:bv,c:C.clipSeen||0});
+    C.rmsSamples=(C.rmsSamples||0)+1;
+    ntxReport({t:"rms",b:bv,c:C.clipSeen||0,n:C.rmsSamples});
     C.clipSeen=0;
   }catch(e){}
 }
 
-var RMS_GATE=0.05;
+// The page samples on its own timer and the gate only decides how often it
+// REPORTS. The default is fast: when a client used to set this and failed to,
+// the page reported twenty times a second and the source published at five.
+var RMS_GATE=1/60;
 function ntxSetMeterInterval(secs){
   var s=parseFloat(secs);
   // Clamped hard: a zero would report every animation frame, and anything
