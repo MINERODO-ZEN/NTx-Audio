@@ -35,6 +35,14 @@ function git(args, cwd) {
 const hash = git("rev-parse --short HEAD", SRC);
 console.log(`deploying ${hash}`);
 
+// The deployed clone is removed once the .gma is built - it is a deploy
+// target, not a build artefact - so it is usually NOT there. Cloning it back
+// is the first step, not an afterthought: a fetch into a folder that does not
+// exist fails with an error that says nothing about the folder.
+if (!fs.existsSync(path.join(ADDON, ".git"))) {
+  console.log("cloning the deploy target");
+  git(`clone "${SRC}" "${ADDON}"`);
+}
 git(`fetch "${SRC}" testing`, ADDON);
 git("reset --hard FETCH_HEAD", ADDON);
 
