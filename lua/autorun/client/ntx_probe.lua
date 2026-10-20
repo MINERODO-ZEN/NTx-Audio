@@ -42,6 +42,54 @@ local pendingRun = false
 local pendingUrl = nil
 local onResult
 
+-- ------------------------------------------------------- pages, locally
+--
+-- The pages live in the addon's own folder, which the game will not load a
+-- document from. They are copied into the CLIENT's data folder once, so a
+-- file:// base has something to load, and so the addon can be made to work
+-- without the page host being up.
+--
+-- The copy is found by globbing, not by a fixed path: the addon's folder is
+-- named by whoever published it.
+local LOCAL_DIR = "ntx"
+
+local function installLocalPages()
+  local written = {}
+  for _, name in ipairs({ "webaudio.html", "probe.html" }) do
+    local found = file.Find("addons/*/data_static/ntx_audio/" .. name, "GAME")
+    local src = found and found[1]
+    if src then
+      local body = file.Read(src, "GAME")
+      if body and body ~= "" then
+        local path = LOCAL_DIR .. "/" .. name
+        if file.Read(path, "DATA") ~= body then file.Write(path, body, "DATA") end
+        written[#written + 1] = name
+      end
+    end
+  end
+  return written
+end
+
+-- The file:// base for those pages. Spaces are encoded because the game
+-- directory has them, and CEF does not accept a raw space in a URL.
+function NTx.LocalPageBase()
+  local dir = game.GetGameDir()
+  if not dir or dir == "" then return nil end
+  dir = dir:gsub("\\", "/"):gsub(" ", "%%20")
+  return "file:///" .. dir .. "/data/" .. LOCAL_DIR .. "/"
+end
+
+if CLIENT then
+  local written = installLocalPages()
+  if #written > 0 then
+    local base = NTx.LocalPageBase()
+    print("[NTx] pages copied to garrysmod/data/" .. LOCAL_DIR .. ": " .. table.concat(written, ", "))
+    if base then
+      print('[NTx] local page base: ntx_page_base "' .. base .. '"')
+    end
+  end
+end
+
 -- Hidden CEF hosting.
 --
 -- These pages load a REMOTE URL, so a 404, DNS failure or CEF timeout paints

@@ -1037,7 +1037,11 @@ end
 -- both have to be current before anything can be tested; printing the stamp on
 -- load makes "the game is still running yesterday's Lua" a one-glance answer
 -- instead of a guessing game.
-NTx.BUILD = "wiresig1"
+--
+-- The stamp is the commit hash, written into ntx_version.lua by the deploy
+-- script. It used to be a literal here that nobody ever changed, which made
+-- it worse than nothing: it looked like a version and never moved.
+if not NTx.COMMIT then NTx.COMMIT = "unknown" end
 
 if SERVER then
   util.AddNetworkString("NTx.Hello")
@@ -1045,7 +1049,7 @@ if SERVER then
     timer.Simple(1, function()
       if not IsValid(ply) then return end
       net.Start("NTx.Hello")
-      net.WriteString(NTx.BUILD)
+      net.WriteString(tostring(NTx.COMMIT))
       net.Send(ply)
     end)
   end)

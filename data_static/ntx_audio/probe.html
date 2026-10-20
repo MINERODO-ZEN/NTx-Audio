@@ -109,7 +109,11 @@ function runProbe(url){
       }).catch(function(){ if(done)return; done=true; clearTimeout(to); r.nocors="fail"; ntxReport(r); });
     }
     function stageB(){
-      var a=new Audio(); a.crossOrigin="anonymous"; a.preload="auto";
+      var a=new Audio(); a.preload="auto";
+      // crossOrigin only where it means something. A file:// page has no CORS
+      // identity, so asking for it there taints the probe for a reason the
+      // real page does not have - the real page never sets it.
+      if(location.protocol!=="file:"){ a.crossOrigin="anonymous"; }
       var src; try{ src=ctx.createMediaElementSource(a); }catch(e){ r.note="mes-fail"; ntxReport(r); return; }
       var an=ctx.createAnalyser(); an.fftSize=256; src.connect(an);
       var zeros=0,checks=0,buf=new Uint8Array(an.fftSize),done=false;
