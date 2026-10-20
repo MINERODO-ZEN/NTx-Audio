@@ -626,6 +626,10 @@ net.Receive("NTx.AmpRates", function(_, ply)
     math.Clamp(GetConVar("ntx_meter_hz") and GetConVar("ntx_meter_hz"):GetFloat() or 66, 1, 130),
     tostring(GetConVar("ntx_meter_hz") and GetConVar("ntx_meter_hz"):GetFloat()))
   lines[#lines + 1] = string.format(
+    "measured levels from clients: %s received, %s accepted, %s dropped (not ready), %s dropped (rate)",
+    tostring(NTx.RmsRecv or 0), tostring(NTx.RmsAccepted or 0),
+    tostring(NTx.RmsDropped or 0), tostring(NTx.RmsRateDropped or 0))
+  lines[#lines + 1] = string.format(
     "slow sync capped at %.1f Hz (ntx_amp_sync_hz=%s), graph at %.1f Hz (ntx_update_hz=%s)",
     math.Clamp(GetConVar("ntx_amp_sync_hz") and GetConVar("ntx_amp_sync_hz"):GetFloat() or 10, 1, 130),
     tostring(GetConVar("ntx_amp_sync_hz") and GetConVar("ntx_amp_sync_hz"):GetFloat()),
