@@ -72,7 +72,7 @@ end
 local function rateOk(ply)
   local now = CurTime()
   local last = ply.__ntxRmsAt or 0
-  if now - last < tickInterval() * 1.05 then return false end
+  if now - last < tickInterval() * 1.2 then return false end
   ply.__ntxRmsAt = now
   return true
 end

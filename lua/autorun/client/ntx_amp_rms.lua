@@ -38,6 +38,7 @@ NTx.RmsInterval = 1 / 66
 
 -- Opt out of sending entirely. For a client that would rather the server
 -- used its fader-only estimate than spend the bandwidth.
+local nextSend = 0
 local cvSend = CreateClientConVar("ntx_amp_rms_send", "1", true, false,
   "Send measured programme levels to the server (0 = off, the server falls back to fader positions)")
 local announced = false
@@ -129,7 +130,14 @@ hook.Add("Think", "NTx.AmpRmsReport", function()
   if not running then return end
   -- Off means off: the server keeps its fader-only estimate and the client
   -- stops spending the bandwidth.
-  if cvSend:GetBool() then report() end
+  if not cvSend:GetBool() then return end
+  -- At the tick rate, not once per frame. A client at a hundred and fifty
+  -- frames a second was sending three times what the server admits, and the
+  -- server threw most of it away - which is what the "dropped by rate" count
+  -- was showing.
+  if CurTime() < nextSend then return end
+  nextSend = CurTime() + (NTx.RmsInterval or (1 / 66))
+  report()
 end)
 
 -- Debug aid: shows what the reporter is holding and how often it is sending.
