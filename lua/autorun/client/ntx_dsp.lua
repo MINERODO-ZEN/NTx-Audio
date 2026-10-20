@@ -9,7 +9,7 @@ NTx_DspLoaded = true
 
 NTx = NTx or {}
 NTx.Graph = { inputs = {}, speakers = {}, mixers = {}, fallbacks = {} }
-NTx.GRAPH_PROTO = 2
+NTx.GRAPH_PROTO = 3
 local warnedGraphProto = false
 -- Amplifier state arrives in its own message (ntx_amp_meters.lua owns the
 -- receive), keyed by entity index. Declared here so a partial reload cannot
@@ -423,6 +423,11 @@ net.Receive("NTx.GraphSync", function()
       pos = net.ReadVector(), ang = net.ReadAngle(),
       mixer = net.ReadEntity(),
     }
+    local ch = net.ReadUInt(4)
+    local bus = net.ReadUInt(4)
+    local sp = g.speakers[#g.speakers]
+    sp.ch = ch
+    sp.bus = (bus > 0) and (bus - 1) or nil
   end
   local nFb = net.ReadUInt(8)
   for _ = 1, nFb do

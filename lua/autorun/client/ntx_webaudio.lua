@@ -307,7 +307,16 @@ local function buildTaps(input, mrec, listenerPos)
         -- Only when a wire feeds the channel. An unwired channel packs as
         -- MidL, so asking it for a bus would quietly force every unamplified
         -- or unwired cabinet to play the MID bus.
-        if ch > 0 and ampEnt.ChannelIsFed and ampEnt:ChannelIsFed(ch) then
+        --
+        -- The bus comes from the graph, where the server derived it from the
+        -- wiring. The amplifier's NetworkVar carries the same thing, but it
+        -- can lag behind the wiring, and a cabinet whose channel looked
+        -- unfed then played the whole stereo programme instead of its bus -
+        -- whatever bus that channel was carrying.
+        if s.bus ~= nil then
+          busId = s.bus
+          playSub = NTx.BusIsSub(busId)
+        elseif ch > 0 and ampEnt.ChannelIsFed and ampEnt:ChannelIsFed(ch) then
           busId = ampEnt:ChannelBusId(ch)
           playSub = NTx.BusIsSub(busId)
         end
@@ -316,10 +325,11 @@ local function buildTaps(input, mrec, listenerPos)
         -- source, which is exactly the "full stereo from one cabinet" symptom,
         -- and the tap payload alone cannot tell you whether side was never
         -- computed or merely dropped downstream.
-        NTx.TapSide[(s.ent:EntIndex())] = string.format(
-          "ch=%d fed=%s bus=%s side=%s", ch,
-          tostring(ampEnt.ChannelIsFed and ampEnt:ChannelIsFed(ch)),
-          tostring(busId), tostring(busId ~= nil and NTx.BusSideOf(busId) or nil))
+      NTx.TapSide[(s.ent:EntIndex())] = string.format(
+        "ch=%d fed=%s bus=%s side=%s gbus=%s", ch,
+        tostring(ampEnt.ChannelIsFed and ampEnt:ChannelIsFed(ch)),
+        tostring(busId), tostring(busId ~= nil and NTx.BusSideOf(busId) or nil),
+        tostring(s.bus))
       else
         NTx.TapSide[(s.ent:EntIndex())] = string.format(
           "no amp ch=0 bus=nil side=nil%s", s.ent:GetActive() and " (active)" or "")

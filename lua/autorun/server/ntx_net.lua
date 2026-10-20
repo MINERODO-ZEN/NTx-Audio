@@ -7,7 +7,7 @@ NTx = NTx or {}
 -- Wire format of NTx.GraphSync. Bumped whenever the record changes shape; a
 -- client that does not recognise it keeps its last good graph instead of
 -- decoding a stream it has lost track of.
-NTx.GRAPH_PROTO = 2
+NTx.GRAPH_PROTO = 3
 NTx.Mixers = NTx.Mixers or {}
 
 util.AddNetworkString("NTx.GraphSync")
@@ -65,6 +65,28 @@ function NTx.CollectGraph()
   end
   for _, e in ipairs(ents.FindByClass("ntx_speaker")) do
     if IsValid(e) then
+      -- Which amplifier channel drives this cabinet, and which bus that
+      -- channel is fed from.
+      --
+      -- The client cannot read the wire graph, and it used to learn the bus
+      -- from a NetworkVar on the amplifier - which could lag behind the
+      -- wiring. A cabinet whose channel looked unfed played the whole stereo
+      -- programme instead of its bus, and a cabinet on channel 1 did it
+      -- whatever bus that channel was carrying. The wiring answers both
+      -- questions, and it is the same wiring the simulation uses.
+      local amp = IsValid(e.GetAmp) and e:GetAmp() or nil
+      local ch, bus = 0, nil
+      if IsValid(amp) and amp:GetClass() == "ntx_amplifier" then
+        ch = NTx.AmpSpeakerChannel(amp, e)
+        if ch > 0 then
+          local src, srcPort = NTx.WireUpstream(amp, "Ch" .. ch .. "In")
+          -- The mixer's output ports are named after the buses, so the port a
+          -- channel is fed from says which bus it is.
+          if IsValid(src) and src:GetClass() == "ntx_mixer" then
+            bus = NTx.BusFromPort(srcPort)
+          end
+        end
+      end
       g.speakers[#g.speakers + 1] = {
         ent = e, stype = e:GetSpeakerType() ~= "" and e:GetSpeakerType() or "MID",
         array = e:GetArrayId() ~= "" and e:GetArrayId() or "A",
@@ -72,6 +94,7 @@ function NTx.CollectGraph()
         hFov = e:GetMidHFov(), vFov = e:GetMidVFov(),
         pos = e:GetPos(), ang = e:GetAngles(),
         mixer = IsValid(e:GetMixer()) and e:GetMixer() or nil,
+        ch = ch, bus = bus,
       }
     end
   end
@@ -137,6 +160,10 @@ function NTx.BroadcastGraph(target)
     net.WriteVector(s.pos)
     net.WriteAngle(s.ang)
     net.WriteEntity(s.mixer or NULL)
+    -- The amplifier channel and the bus it is fed from. 0 means "no bus";
+    -- the bus id is stored one higher so the difference is visible.
+    net.WriteUInt(math.Clamp(s.ch or 0, 0, 8), 4)
+    net.WriteUInt(s.bus and (math.Clamp(s.bus, 0, 4) + 1) or 0, 4)
   end
   net.WriteUInt(#g.fallbacks, 8)
   for _, b in ipairs(g.fallbacks) do

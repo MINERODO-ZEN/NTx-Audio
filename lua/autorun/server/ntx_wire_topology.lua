@@ -175,17 +175,31 @@ local function rebuild()
   local buses = ents.FindByClass("ntx_fallback_bus")
   local mixers = NTx.Mixers or {}
 
-  -- Amplifiers: which mixer feeds this box, if any. Only touched once the amp
-  -- actually has a signal input wired.
+  -- Amplifiers: which mixer feeds this box, if any, and which bus each
+  -- channel is fed from.
   for _, amp in ipairs(amps) do
-    if IsValid(amp) and wiredUp(amp) then
+    if IsValid(amp) then
       local mixer, nCh = nil, math.Clamp(math.floor(amp:GetChannels() or 2), 1, 8)
       for ch = 1, nCh do
-        local src = NTx.WireUpstream(amp, sigPortIn(ch))
+        local src, srcPort = NTx.WireUpstream(amp, sigPortIn(ch))
         -- Every channel, not just up to the first one fed: an unlink has to
         -- clear the bit too, or the client keeps playing an unwired channel's
-        -- stale bus.
+        -- stale bus. And every amplifier, not only the ones with a cabinet on
+        -- them - the old guard asked the OUTPUTS, so an amplifier whose inputs
+        -- were wired kept whatever it had last published.
         if amp.SetChannelFed then amp:SetChannelFed(ch, IsValid(src)) end
+        -- The bus comes from the WIRING. The mixer's output ports are named
+        -- after the buses, so the port a channel is fed from says which bus
+        -- it is.
+        --
+        -- The value carries the id as well, but a value only arrives when it
+        -- changes: the mixer publishes when the level moves, and a channel
+        -- wired after the last publish never got one - so it kept the default
+        -- bus and played the wrong side of the programme.
+        if IsValid(src) and src:GetClass() == "ntx_mixer" and srcPort then
+          local bus = NTx.BusFromPort(srcPort)
+          if bus ~= nil and amp.SetChannelBus then amp:SetChannelBus(ch, bus) end
+        end
         if IsValid(src) and src:GetClass() == "ntx_mixer" then mixer = src end
       end
       if amp:GetMixer() ~= mixer then amp:SetMixer(mixer) end

@@ -256,6 +256,20 @@ function NTx.BusName(id)
   return NTx.BUS_NAMES[NTx.BusClamp(id) + 1] or "MidL"
 end
 
+--- The bus a mixer's output port carries, read off its name.
+---
+--- The mixer's outputs are named after the buses, so the WIRING says which
+--- bus feeds a channel - no value involved. The value carries the id as well,
+--- but a value only arrives when it changes, and a channel wired after the
+--- last publish never got one.
+function NTx.BusFromPort(name)
+  name = tostring(name or "")
+  for i = 1, #NTx.BUS_PORTS do
+    if NTx.BUS_PORTS[i] == name then return i - 1 end
+  end
+  return nil
+end
+
 -- How often the signal chain runs.
 --
 -- A source publishes its measured level, the mixer republishes it, and a
