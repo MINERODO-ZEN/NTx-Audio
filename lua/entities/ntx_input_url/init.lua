@@ -15,7 +15,7 @@ function ENT:Initialize()
     -- still be put to sleep, and the level stops with it.
     print("[NTx] " .. self:GetClass() .. ": SetNeverSleep is not available")
   end
-  self:SetModel("models/props_lab/reciever01a.mdl")
+  self:SetModel("models/minerodo/pioneer/pioneercdjset.mdl")
   self:PhysicsInit(SOLID_VPHYSICS)
   self:SetMoveType(MOVETYPE_VPHYSICS)
   self:SetSolid(SOLID_VPHYSICS)

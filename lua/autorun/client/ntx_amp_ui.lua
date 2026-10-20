@@ -57,6 +57,14 @@ local function buildFields(parent, ent, fields, getter, sender)
     end
     return false
   end
+  -- The controls are built once and never looked at again, so a profile
+  -- loaded from here changed the cabinet and left the panel showing the old
+  -- numbers. Each control registers how to re-read itself, and the panel
+  -- refreshes them after anything that changes the entity from outside.
+  local refreshers = {}
+  -- While refreshing, a control is set to the value it already holds, and
+  -- firing its change handler would send every one of them back to the server.
+  local refreshing = false
   for _, entry in ipairs(fields) do
     if entry.label ~= "" and entry.set and not entry.hidden and not isLocked(entry.name) then
       local r = row(parent)
@@ -78,6 +86,9 @@ local function buildFields(parent, ent, fields, getter, sender)
           local v = comboGet(ctl)
           if v ~= nil then sender(entry.name, v) end
         end
+        refreshers[#refreshers + 1] = function()
+          comboPick(ctl, getter(entry.name))
+        end
       elseif entry.isString then
         ctl = vgui.Create("DTextEntry", r)
         ctl:Dock(FILL)
@@ -85,12 +96,21 @@ local function buildFields(parent, ent, fields, getter, sender)
         -- On enter, not on every keystroke: a half-typed array id is not a
         -- value the server should be handed.
         ctl.OnEnter = function() sender(entry.name, ctl:GetValue()) end
+        refreshers[#refreshers + 1] = function()
+          ctl:SetText(tostring(getter(entry.name) or ""))
+        end
       elseif isBool then
         ctl = vgui.Create("DCheckBoxLabel", r)
         ctl:SetText("")
         ctl:SetValue((tonumber(value) or 0) > 0.5)
         ctl:Dock(FILL)
-        ctl.OnChange = function(_, v) sender(entry.name, v and 1 or 0) end
+        ctl.OnChange = function(_, v)
+          if refreshing then return end
+          sender(entry.name, v and 1 or 0)
+        end
+        refreshers[#refreshers + 1] = function()
+          ctl:SetValue((tonumber(getter(entry.name)) or 0) > 0.5)
+        end
       else
         ctl = vgui.Create("DNumSlider", r)
         ctl:Dock(FILL)
@@ -98,9 +118,23 @@ local function buildFields(parent, ent, fields, getter, sender)
         local decimals = entry.step < 0.1 and 2 or (entry.step < 1 and 1 or 0)
         ctl:SetDecimals(decimals)
         ctl:SetValue(value or entry.min)
-        ctl.OnValueChanged = function(_, v) sender(entry.name, v) end
+        ctl.OnValueChanged = function(_, v)
+          if refreshing then return end
+          sender(entry.name, v)
+        end
+        refreshers[#refreshers + 1] = function()
+          ctl:SetValue(getter(entry.name) or entry.min)
+        end
       end
     end
+  end
+  -- Re-reads every control from the entity. The panel calls this after
+  -- anything that changed the cabinet from outside the panel: a profile
+  -- loaded here, or a profile applied from somewhere else.
+  return function()
+    refreshing = true
+    for _, r in ipairs(refreshers) do r() end
+    refreshing = false
   end
 end
 
@@ -189,6 +223,9 @@ buildAmpUI = function(amp)
 
   local scroll = vgui.Create("DScrollPanel", frame)
   scroll:Dock(FILL)
+  -- The panel's own refresh, filled in when the fields are built. The profile
+  -- row is above them and needs it, so it is declared here first.
+  local refreshFields
 
   -- The front panel itself, drawn by the same code that draws it in 3D.
   local face = vgui.Create("DPanel", scroll)
@@ -229,6 +266,13 @@ buildAmpUI = function(amp)
   -- One place sends the model, so the dropdown and the button can never drift.
   local function loadModel(id)
     sendAmpKind(amp, "profile", function() net.WriteString(tostring(id or "")) end)
+    -- The values are the server's to give, so they arrive a moment later. The
+    -- panel is refreshed when they do, or it keeps showing the old numbers and
+    -- a loaded model looks like nothing happened.
+    timer.Simple(0.15, function()
+      if not IsValid(frame) then return end
+      if refreshFields then refreshFields() end
+    end)
   end
   combo.OnSelect = function()
     loadModel(comboGet(combo))
@@ -286,7 +330,7 @@ buildAmpUI = function(amp)
   -- Behaviour toggles (everything that differs between one amplifier and the
   -- next: PFC, fan, standby, thermal limiter, meters, taps).
   label(scroll, "BEHAVIOUR", COL_WARN, 18):Dock(TOP)
-  buildFields(scroll, amp, NTx.AmpFields, function(name)
+  refreshFields = buildFields(scroll, amp, NTx.AmpFields, function(name)
     if name == "channels" then return amp:GetChannels() end
     if name == "ratedw" then return amp:GetRatedW() end
     if name == "ratedz" then return amp:GetRatedLoad() end
@@ -495,6 +539,9 @@ function NTx.OpenCabinetUI(spk)
   frame:MakePopup()
   local scroll = vgui.Create("DScrollPanel", frame)
   scroll:Dock(FILL)
+  -- Declared here and filled in lower down: the profile row needs to say what
+  -- happened, and the label it says it in is docked to the frame's bottom.
+  local hint
 
   local prow = row(scroll, 30)
   local plbl = label(prow, "Profile")
@@ -527,8 +574,19 @@ function NTx.OpenCabinetUI(spk)
   -- that lands on the wrong option cannot change the cabinet.
   load.DoClick = function()
     local p = NTx.SpeakerProfileById(tostring(comboGet(combo) or ""))
-    if not p then return end
+    if not p then
+      if hint then hint:SetText("no such profile") end
+      return
+    end
     NTx.ApplySpeakerProfile(spk, p)
+    -- The values are the server's to give, so they arrive a moment later. The
+    -- panel is refreshed when they do, otherwise it keeps showing the old
+    -- numbers and a loaded profile looks like nothing happened.
+    timer.Simple(0.15, function()
+      if not IsValid(frame) then return end
+      if refreshFields then refreshFields() end
+      if hint then hint:SetText("loaded " .. p.name) end
+    end)
   end
   label(scroll, "* = saved profile (shared with the server)", COL_DIM, 16):Dock(TOP)
 
@@ -554,7 +612,7 @@ function NTx.OpenCabinetUI(spk)
   for _, entry in ipairs(NTx.SpkFields) do
     if entry.name ~= "profile" and entry.label ~= "" then fields[#fields + 1] = entry end
   end
-  buildFields(scroll, spk, fields, spkGetter, spkSender(spk))
+  local refreshFields = buildFields(scroll, spk, fields, spkGetter, spkSender(spk))
 
   -- Link row.
   local lrow = row(scroll, 28)
@@ -588,7 +646,7 @@ function NTx.OpenCabinetUI(spk)
   local st = label(info, "coil -", COL_DIM)
   st:Dock(FILL)
 
-  local hint = vgui.Create("DLabel", frame)
+  hint = vgui.Create("DLabel", frame)
   hint:Dock(BOTTOM)
   hint:SetTall(16)
   hint:DockMargin(4, 0, 4, 0)
@@ -631,7 +689,13 @@ function NTx.OpenCabinetUI(spk)
       return
     end
     entry:SetText("")
-    hint:SetText("")
+    hint:SetText("saved")
+    -- The cabinet keeps the values it had, and the profile holds them, but
+    -- the panel's own numbers are read once, so they are refreshed too.
+    timer.Simple(0.15, function()
+      if not IsValid(frame) then return end
+      if refreshFields then refreshFields() end
+    end)
   end
 
   frame.Think = function()

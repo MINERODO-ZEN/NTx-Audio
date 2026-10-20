@@ -518,6 +518,8 @@ net.Receive("NTx.AmpEdit", function(_, ply)
     if NTx.AmpProfile(id) then
       amp:ApplyAmpProfile(id)
       NTx.AmpSimDrop(amp)
+      ply:ChatPrint("[NTx] Model loaded on amplifier [" .. amp:EntIndex() .. "]: "
+        .. tostring(NTx.AmpProfile(id).name or id))
     end
   elseif kind == "reset" then
     amp:SetClipLatch(false)
@@ -679,6 +681,10 @@ net.Receive("NTx.SpkProfile", function(_, ply)
     id = id, stype = stype, ohm = ohm, rmsW = rmsW, peakW = peakW,
     minAmpW = minAmpW, tapVolt = tapV, hifov = hifov, vifov = vifov,
   })
+  -- Said out loud. A profile that is applied and not reported looks exactly
+  -- like one that is not applied at all.
+  ply:ChatPrint("[NTx] Profile applied to cabinet [" .. spk:EntIndex() .. "]: "
+    .. string.format("%.0f ohm, %.0f W rms, %s", ohm, rmsW, stype))
   if NTx.BroadcastGraph then NTx.BroadcastGraph() end
 end)
 
