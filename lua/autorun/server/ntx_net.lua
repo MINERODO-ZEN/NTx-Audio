@@ -88,6 +88,13 @@ function NTx.CollectGraph()
           if IsValid(src) and src:GetClass() == "ntx_mixer" then
             bus = NTx.BusFromPort(srcPort)
           end
+          -- The amplifier's own vars are refreshed here as well, from the same
+          -- wiring. The topology walk only runs when a wire changes, so a rig
+          -- that was built before a change to it kept the vars it had - and a
+          -- channel whose fed flag was missing left the client with no bus at
+          -- all, which plays the whole stereo programme.
+          if amp.SetChannelFed then amp:SetChannelFed(ch, IsValid(src)) end
+          if bus ~= nil and amp.SetChannelBus then amp:SetChannelBus(ch, bus) end
         end
       end
       g.speakers[#g.speakers + 1] = {
