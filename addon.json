@@ -1,6 +1,6 @@
 {
   "title": "NTx Audio",
   "type": "tool",
-  "tags": [ "realism", "entities", "build" ],
+  "tags": [ "realism", "build" ],
   "ignore": [ "*.psd", "*.md", "src/*", ".git*", "opencode.json", "packs/example/*" ]
 }

@@ -1,0 +1,20 @@
+# What gmad must not pack. This is gmad's own ignore file, read when it
+# builds the .gma from this folder.
+#
+# The addon manifest (addon.json) carries the same list for the publisher.
+# Both have to say it, because they are two different tools: the publisher
+# reads one, gmad reads this one.
+#
+# The version stamp is NOT ignored: it is generated, and it is what says
+# which commit the .gma was built from.
+.git
+.gitignore
+.gitattributes
+*.md
+*.psd
+src
+opencode.json
+packs/example
+*.gma
+powersoft_k*_data_en_v2.5.html
+powersoft_k*_data_en_v2.5_files
