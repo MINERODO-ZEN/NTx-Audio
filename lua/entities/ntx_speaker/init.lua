@@ -3,6 +3,12 @@ AddCSLuaFile("shared.lua")
 include("shared.lua")
 
 function ENT:Initialize()
+  -- Never sleep. GMod puts an entity that is out of sight to sleep and stops
+  -- calling its Think entirely, so a source that slept stopped publishing its
+  -- level - and the mixer, the amplifier's input and the cabinets all
+  -- inherited that rate. It looked like a slow measurement; it was a sleeping
+  -- prop. These entities are the signal path, so they have to keep running.
+  if self.SetNeverSleep then self:SetNeverSleep(true) end
   self:CreateWirePorts()
   self.WireIn = 0
   self.WireOut = -1
