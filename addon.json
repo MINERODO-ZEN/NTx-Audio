@@ -1,6 +1,6 @@
 {
-  "title": "NTx Audio (port)",
+  "title": "NTx Audio",
   "type": "tool",
-  "tags": [ "realism" ],
-  "ignore": [ "*.psd", "*.md", "src/*", ".git*" ]
+  "tags": [ "realism", "entities", "build" ],
+  "ignore": [ "*.psd", "*.md", "src/*", ".git*", "opencode.json", "packs/example/*" ]
 }

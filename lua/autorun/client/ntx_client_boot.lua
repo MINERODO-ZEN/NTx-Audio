@@ -38,6 +38,10 @@ concommand.Add("ntx_audio_status", function()
     .. " verdict=" .. tostring(NTx.WebAudioVerdict or "pending")
     .. " fallback=" .. tostring(NTx.FallbackAllowed and NTx.FallbackAllowed() or "?")
     .. " pageRunning=" .. tostring(NTx.WebAudioRunning))
+  -- Wiremod is required. If it is missing, none of the lines below mean what
+  -- they say: there is no wire graph to read the bus from.
+  print("[NTx] wiremod " .. (NTx.HasWiremod and NTx.HasWiremod() and "present" or
+    "MISSING - REQUIRED (Workshop item " .. tostring(NTx.WIREMOD_WORKSHOP_ID or "?") .. ")"))
   -- Per-cabinet bus resolution. The symptom of a tap with no bus is a cabinet
   -- playing the whole stereo programme, which looks like a page bug and is
   -- usually not one - so the four conditions that decide it are printed here.

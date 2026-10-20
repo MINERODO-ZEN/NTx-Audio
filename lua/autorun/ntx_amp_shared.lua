@@ -975,6 +975,28 @@ function NTx.WireOut(ent, name, value)
   pcall(Wire_TriggerOutput, ent, name, value)
 end
 
+-- Wiremod is REQUIRED.
+--
+-- The guards above stop a server without it from erroring, but the addon
+-- cannot work without it: the wire graph IS the topology, and the topology
+-- is the rig. A rig that cannot be wired is a rig that cannot be built, so
+-- this is said once and loudly rather than left to be discovered as a rig
+-- that does nothing.
+NTx.WIREMOD_WORKSHOP_ID = "160250458"
+
+function NTx.HasWiremod()
+  return not not (Wire_CreateInputs and Wire_TriggerOutput and WireLib and WireLib.DT)
+end
+
+if SERVER then
+  hook.Add("InitPostEntity", "NTx.RequireWiremod", function()
+    if NTx.HasWiremod() then return end
+    print("[NTx] Wiremod is REQUIRED by this addon and is not installed.")
+    print("[NTx] Install Wiremod from the Workshop (item " .. NTx.WIREMOD_WORKSHOP_ID
+      .. "): the rig is wired, not configured.")
+  end)
+end
+
 -- ---------------------------------------------------------------- wire codes
 
 -- Single number a wire readout can carry; the client and the Utilities page
@@ -1014,7 +1036,6 @@ end
 -- handlers on the server, so this is driven by a player and sends the console
 -- command to that player's client. Returns true when it consumed the click.
 function NTx.OpenEntityGui(ply, ent)
-  print("[NTX DBG] OpenEntityGui " .. (IsValid(ent) and ent:GetClass() .. ":" .. ent:EntIndex() or "nil"))
   local cmd = NTx.GuiVerb(ent)
   if cmd == "" or not IsValid(ply) then return false end
   ply:ConCommand(cmd)

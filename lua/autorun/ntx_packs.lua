@@ -25,6 +25,9 @@ AddCSLuaFile()
 
 NTx = NTx or {}
 NTx.Packs = NTx.Packs or {}
+-- Workshop items already mounted, so a rescan does not repeat the work or
+-- repeat the message.
+local mounted = {}
 -- Lamps live in their own table rather than being merged into the baked
 -- PAC3_LEDS, because the baked file is a client file in a different folder
 -- and the load order between the two is not something to depend on.
@@ -122,8 +125,19 @@ function NTx.LoadPacks()
       -- Without this a player who does not have the addon gets an amplifier
       -- they cannot see.
       local ws = tostring(manifest.workshop or "")
-      if ws ~= "" and SERVER then
-        pcall(AddMountedAddon, ws)
+      if ws ~= "" and SERVER and not mounted[ws] then
+        -- Said out loud, because the failure is invisible otherwise: the
+        -- player gets an amplifier they cannot see and nothing anywhere says
+        -- why. A wrong or unpublished id fails here and only here.
+        mounted[ws] = true
+        local ok, err = pcall(AddMountedAddon, ws)
+        if not ok then
+          print("[NTx] pack '" .. tostring(prof and prof.id or id)
+            .. "': workshop item " .. ws .. " could not be mounted: " .. tostring(err))
+        else
+          print("[NTx] pack '" .. tostring(prof and prof.id or id)
+            .. "': mounting workshop item " .. ws)
+        end
       end
     end
   end
@@ -174,3 +188,24 @@ do
     print(string.format("[NTx] %d pack profile(s) loaded: %s", n, table.concat(ids, ", ")))
   end
 end
+
+-- A pack that is mounted from the Workshop arrives AFTER this file has run:
+-- the download is asynchronous. So the packs are looked for again, because a
+-- pack that lands late is a pack nobody can see.
+--
+-- The spawn menu takes its list of entity classes once, at InitPostEntity,
+-- so a late pack still needs a map change to get a button - but its profile
+-- is live from the next scan, which is the difference between an amplifier
+-- that works and one that does not exist.
+local lastPackCount = 0
+timer.Create("NTx.PackRescan", 30, 0, function()
+  local n = NTx.LoadPacks()
+  -- Quiet unless something changed: a scan every thirty seconds that printed
+  -- every scan would bury the console.
+  if n ~= lastPackCount then
+    lastPackCount = n
+    -- Registering again is harmless: a class that is already registered is
+    -- not registered a second time.
+    if NTx.RegisterAmpVariants then NTx.RegisterAmpVariants() end
+  end
+end)
