@@ -106,7 +106,9 @@ if (addon) {
   const ignore = addon.ignore || [];
   // The ignore patterns are globs, and the ones that matter here are the
   // directory and file kinds that would be dead weight in a public archive.
-  const mustShip = ["data_static/ntx_audio/webaudio.html", "LICENSE"];
+  // Only what gmad can pack is here: it whitelists extensions, so the pages,
+  // the manifest and the license never reach the archive at all.
+  const mustShip = ["lua/autorun/ntx_amp_shared.lua", "models/minerodo/powersoft/powersoft_k.mdl"];
   for (const rel of mustShip) {
     const ignored = ignore.some((pat) => {
       const rx = new RegExp("^" + pat.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");

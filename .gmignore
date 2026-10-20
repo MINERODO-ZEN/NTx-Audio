@@ -1,6 +1,9 @@
 # What gmad must not pack. This is gmad's own ignore file, read when it
 # builds the .gma from this folder.
 #
+# gmad matches a pattern anywhere in the path, so "src" would have taken
+# data_static with it. A pattern is a path here, not a fragment.
+#
 # The addon manifest (addon.json) carries the same list for the publisher.
 # Both have to say it, because they are two different tools: the publisher
 # reads one, gmad reads this one.
@@ -12,7 +15,7 @@
 .gitattributes
 *.md
 *.psd
-src
+src/
 opencode.json
 packs/example
 *.gma
