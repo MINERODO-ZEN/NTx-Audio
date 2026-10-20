@@ -440,3 +440,119 @@ timer.Create("NTx.WireTopoSweep", 1, 0, function()
     end
   end
 end)
+
+-- ---------------------------------------------------------------- duplicator
+--
+-- A copied rig has to come back wired. GMod's duplicator knows nothing about
+-- wires, and it skips Entity-typed network vars outright
+-- (garrysmod/lua/includes/extensions/entity.lua:495), so both the wires and
+-- the Amp / Mixer links were lost on every copy.
+--
+-- Wiremod already knows how to do the wire half: WireLib.BuildDupeInfo writes
+-- the topology into an entity modifier and WireLib.ApplyDupeInfo re-creates
+-- it from the created-entities table. Entities based on base_wire_entity get
+-- that for free; the NTx entities are based on base_gmodentity, so it is done
+-- here instead.
+--
+-- The links an entity owns, by accessor name: "Amp" is the amplifier driving
+-- a cabinet, "Mixer" the mixer it is patched into. An entity without the
+-- accessor simply has no such link.
+local DUPE_LINKS = { "Amp", "Mixer" }
+
+-- The wires of one entity, in the modifier Wiremod itself reads back.
+local function storeWires(ent)
+  -- Cleared first, and always: a modifier is merged into, not replaced, so an
+  -- amplifier whose channel count changed would keep the ports it no longer
+  -- has, and a rig that was unwired since the last copy would get its old
+  -- wires back.
+  duplicator.ClearEntityModifier(ent, "WireDupeInfo")
+  if not WireLib or not WireLib.BuildDupeInfo then return end
+  local info = WireLib.BuildDupeInfo(ent)
+  if not info or not istable(info.Wires) or not next(info.Wires) then return end
+  duplicator.StoreEntityModifier(ent, "WireDupeInfo", info)
+end
+
+-- Re-creates the wires of one entity from the copy.
+--
+-- The lookup is the one Wiremod's own base_wire_entity uses: the
+-- created-entities table is keyed by the ORIGINAL entity index, so an index
+-- stored at copy time finds the copy of that entity here.
+local function restoreWires(ply, ent, created)
+  if not WireLib or not WireLib.ApplyDupeInfo then return end
+  local info = ent.EntityMods and ent.EntityMods.WireDupeInfo
+  if not info or not istable(info.Wires) then return end
+  WireLib.ApplyDupeInfo(ply, ent, info, function(id)
+    -- The world is index zero in Wiremod's own lookup.
+    if id == 0 then return game.GetWorld() end
+    local target = created and created[id]
+    if IsValid(target) then return target end
+  end)
+end
+
+-- Saves what a copy of this entity needs: the links it owns and the wires
+-- that come into it.
+function NTx.DupeStore(ent, kind, d)
+  if d then
+    -- The modifier is cleared first. A modifier is merged into, not replaced,
+    -- so a link that was taken out since the last copy would still be in
+    -- there and the new copy would point at a cabinet that is no longer
+    -- patched to anything.
+    duplicator.ClearEntityModifier(ent, kind)
+    for _, name in ipairs(DUPE_LINKS) do
+      local get = ent["Get" .. name]
+      if get then
+        local target = get(ent)
+        -- The index and not the entity: a modifier is stored as JSON, and an
+        -- entity in it does not survive the round trip. The index is resolved
+        -- again on paste, through the created-entities table.
+        if IsValid(target) then d[name] = target:EntIndex() end
+      end
+    end
+    duplicator.StoreEntityModifier(ent, kind, d)
+  end
+  storeWires(ent)
+end
+
+-- Puts a copy back together: the wires, the links, and the mirror that is
+-- derived from them.
+--
+-- The order matters. The wires go in first, because the amplifier, the
+-- channel and the mixer's channel list are all derived from them; the stored
+-- links are the fallback for a rig that is not wired at all.
+function NTx.DupeRestore(ply, ent, created, d)
+  restoreWires(ply, ent, created)
+  if d then
+    for _, name in ipairs(DUPE_LINKS) do
+      local idx = tonumber(d[name])
+      -- A target that was not part of the copy leaves the link unset: a
+      -- cabinet copied on its own has no amplifier to point at, and pointing
+      -- it at nothing is what an unset link already says.
+      if idx and idx > 0 then
+        local target = created and created[idx]
+        if IsValid(target) then ent["Set" .. name](ent, target) end
+      end
+    end
+  end
+  NTx.RebuildWireTopology()
+end
+
+-- The mix the user dialled in, carried across to the copy.
+--
+-- The channel list itself is derived from the wires, so it is rebuilt rather
+-- than restored - but the fader, the mute and the label belong to the source
+-- the channel is patched to, and rebuilding the list from scratch would reset
+-- every fader to unity on every copy.
+function NTx.DupeRestoreChannels(mixer, d, created)
+  if not d or not d.channels then return end
+  for _, ch in ipairs(d.channels) do
+    local src = created and created[tonumber(ch.input) or 0]
+    if IsValid(src) and mixer.EnsureChannel then
+      local live = mixer:EnsureChannel(src)
+      if live then
+        live.Fader = NTx.ClampFader(ch.fader)
+        live.Muted = ch.muted == true
+        live.Label = tostring(ch.label or "")
+      end
+    end
+  end
+end

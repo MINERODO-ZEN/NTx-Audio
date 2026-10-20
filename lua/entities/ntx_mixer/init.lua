@@ -176,14 +176,22 @@ end
 function ENT:PreEntityCopy()
   local chd = {}
   for _, ch in ipairs(self.Channels) do
-    chd[#chd + 1] = { fader = ch.Fader, muted = ch.Muted, label = ch.Label }
+    -- The source the channel is patched to, by index. The channel list itself
+    -- comes from the wires and is rebuilt on paste, so the mix that was
+    -- dialled in has to be matched to the COPY of that source.
+    chd[#chd + 1] = {
+      fader = ch.Fader, muted = ch.Muted, label = ch.Label,
+      input = IsValid(ch.Input) and ch.Input:EntIndex() or 0,
+    }
   end
-  duplicator.StoreEntityModifier(self, "NtxMixer", {
+  local d = {
     master = self:GetMasterFader(), mm = self:GetMasterMuted(),
     mid = self:GetMidFader(), midm = self:GetMidMuted(),
     sub = self:GetSubFader(), subm = self:GetSubMuted(),
     channels = chd,
-  })
+  }
+  -- The wires that decide the channel list.
+  NTx.DupeStore(self, "NtxMixer", d)
 end
 
 function ENT:PostEntityPaste(ply, ent, created)
@@ -196,6 +204,14 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetSubFader(NTx.ClampFader(d.sub))
     self:SetSubMuted(d.subm == true)
   end
+  -- The channel list of the copy points at the entities it was copied FROM.
+  -- It is dropped here: the list is derived from the wires, and the mix that
+  -- was dialled in is carried across by the source each channel belongs to.
+  self.Channels = {}
+  -- The wires, and the channel list that is derived from them.
+  NTx.DupeRestore(ply, self, created, d)
+  -- The mix that was dialled in, on the channels the rebuild just made.
+  NTx.DupeRestoreChannels(self, d, created)
   if NTx.BroadcastGraph then NTx.BroadcastGraph() end
 end
 

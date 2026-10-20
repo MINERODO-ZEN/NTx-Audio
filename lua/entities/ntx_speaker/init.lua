@@ -133,7 +133,9 @@ function ENT:PreEntityCopy()
   d.imp, d.rmsw, d.peakw, d.minampw = self:GetImpedance(), self:GetRmsW(), self:GetPeakW(), self:GetMinAmpW()
   d.tapv, d.seriesgrp, d.active = self:GetTapVolt(), self:GetSeriesGroup(), self:GetActive()
   d.ampch = self:GetAmpChannel()
-  duplicator.StoreEntityModifier(self, "NtxSpeaker", d)
+  -- The amplifier and the mixer this cabinet belongs to, and the wires that
+  -- brought it here. Without them a copy is a loose cabinet.
+  NTx.DupeStore(self, "NtxSpeaker", d)
 end
 
 function ENT:PostEntityPaste(ply, ent, created)
@@ -155,6 +157,8 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetActive(d.active == true)
     self:SetAmpChannel(math.Clamp(math.floor(tonumber(d.ampch) or 0), 0, 8))
   end
+  -- The wires, the amplifier and the channel that come out of them.
+  NTx.DupeRestore(ply, self, created, d)
   -- Duplication hands the rig to the player doing the work, so gizmos and
   -- link lines stay private to whoever is building.
   if ply and CPPI then self:CPPISetOwner(ply) end

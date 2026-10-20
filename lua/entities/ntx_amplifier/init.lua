@@ -130,7 +130,7 @@ function ENT:MainsVoltage(nominal)
 end
 
 function ENT:PreEntityCopy()
-  duplicator.StoreEntityModifier(self, "NtxAmp", {
+  local d = {
     profile = self:GetProfile(),
     chans = self:GetChannels(), ratedw = self:GetRatedW(), ratedz = self:GetRatedLoad(),
     minz = self:GetMinLoad(), sens = self:GetSens(), trim = self:GetTrim(), ilime = self:GetIlime(),
@@ -142,7 +142,9 @@ function ENT:PreEntityCopy()
     cliphold = self:GetClipHold(), crest = self:GetCrestDb(), thbias = self:GetThermalBias(),
     mainsov = self:GetMainsOverride(), ambient = self:GetAmbient(),
     power = self:GetPower(), fanon = self:GetFanOn(),
-  })
+  }
+  -- The mixer this amplifier is fed from, and the wires that feed it.
+  NTx.DupeStore(self, "NtxAmp", d)
 end
 
 function ENT:PostEntityPaste(ply, ent, created)
@@ -181,6 +183,10 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetFanOn(d.fanon ~= false)
     self:CreateWirePorts()
   end
+  -- The wires, the mixer link and the channel state that comes out of them.
+  -- After CreateWirePorts, because the wires are re-created on the ports the
+  -- restored channel count gives.
+  NTx.DupeRestore(ply, self, created, d)
   if NTx.Amplifiers then NTx.Amplifiers[self] = true end
   if NTx.BroadcastGraph then NTx.BroadcastGraph() end
 end

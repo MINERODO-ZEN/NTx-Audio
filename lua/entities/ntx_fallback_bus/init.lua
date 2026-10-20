@@ -66,9 +66,11 @@ function ENT:SpawnFunction(ply, tr)
 end
 
 function ENT:PreEntityCopy()
-  duplicator.StoreEntityModifier(self, "NtxFallback", {
+  local d = {
     trim = self:GetTrim(), label = self:GetBusLabel(), flat = self:GetFlat2D(),
-  })
+  }
+  -- The mixer this bus is patched into, and the wires that patch it.
+  NTx.DupeStore(self, "NtxFallback", d)
 end
 
 function ENT:PostEntityPaste(ply, ent, created)
@@ -78,6 +80,8 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetBusLabel(string.sub(tostring(d.label or ""), 1, 32))
     self:SetFlat2D(d.flat == true)
   end
+  -- The wires and the mixer link that come out of them.
+  NTx.DupeRestore(ply, self, created, d)
 end
 
 function ENT:Think()

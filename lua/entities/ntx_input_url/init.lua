@@ -154,10 +154,12 @@ function ENT:SpawnFunction(ply, tr)
 end
 
 function ENT:PreEntityCopy()
-  duplicator.StoreEntityModifier(self, "NtxInput", {
+  local d = {
     url = self:GetStreamUrl(),
     vol = self:GetInputVolume(), maxd = self:GetMaxDist(),
-  })
+  }
+  -- The mixer this source is patched into, and the wires that patch it.
+  NTx.DupeStore(self, "NtxInput", d)
 end
 
 function ENT:PostEntityPaste(ply, ent, created)
@@ -167,6 +169,8 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetInputVolume(NTx.ClampFader(d.vol))
     self:SetMaxDist(math.Clamp(tonumber(d.maxd) or 1200, 100, 10000))
   end
+  -- The wires and the mixer link that come out of them.
+  NTx.DupeRestore(ply, self, created, d)
 end
 
 function ENT:Think()
