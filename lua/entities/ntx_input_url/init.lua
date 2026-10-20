@@ -69,13 +69,18 @@ function ENT:Think()
   -- publishes meant the rate was recomputed only when a publish happened, so
   -- a source whose value stopped changing reported the last rate it ever
   -- achieved - a number for something that was no longer happening.
-  local n = (self.PublishCount or 0)
+  --
+  -- NOT named n: n is the number of BUSES, and shadowing it made the publish
+  -- loop walk the publish count instead of the five buses - an ever growing
+  -- number of indices into a five entry table. The loop got slower and
+  -- slower, which is what the rate had fallen to.
+  local published = (self.PublishCount or 0)
   local now = CurTime()
   if not self.PublishAt or (now - self.PublishAt) >= 1 then
     local elapsed = now - (self.PublishAt or (now - 1))
-    self.PublishRate = elapsed > 0 and (n - (self.PublishBase or 0)) / elapsed or 0
+    self.PublishRate = elapsed > 0 and (published - (self.PublishBase or 0)) / elapsed or 0
     self.PublishAt = now
-    self.PublishBase = n
+    self.PublishBase = published
   end
   -- Publish on a SCHEDULE, not only when the value changes.
   --
@@ -88,7 +93,7 @@ function ENT:Think()
   local interval = NTx.SignalInterval and NTx.SignalInterval() or (1 / 66)
   if changed or (now - (self.LastPublishAt or 0)) >= interval then
     self.LastPublishAt = now
-    self.PublishCount = n + 1
+    self.PublishCount = published + 1
     -- A fresh table each time: Wiremod holds ARRAY values by reference, and
     -- mutating the one it already stores would not re-trigger the fan-out.
     local buses = {}
