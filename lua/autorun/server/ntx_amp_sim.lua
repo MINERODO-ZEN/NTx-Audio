@@ -668,8 +668,8 @@ net.Receive("NTx.AmpRates", function(_, ply)
         for i = 1, 5 do vals[#vals + 1] = string.format("%.3f", tonumber(held.b[i]) or -1) end
       end
       lines[#lines + 1] = string.format(
-        "  source %d publishes %.1f Hz (chain capped at %.0f Hz) measured=[%s] age=%.2fs",
-        inp:EntIndex(), inp.PublishRate or 0,
+        "  source %d tick=%.1f Hz changed=%.1f Hz published=%.1f Hz (chain capped at %.0f Hz) measured=[%s] age=%.2fs",
+        inp:EntIndex(), inp.ThinkRate or 0, inp.ChangeRate or 0, inp.PublishRate or 0,
         math.Clamp(GetConVar("ntx_signal_hz") and GetConVar("ntx_signal_hz"):GetFloat() or 67, 1, 130),
         table.concat(vals, " "),
         held and (CurTime() - (held.at or 0)) or -1)

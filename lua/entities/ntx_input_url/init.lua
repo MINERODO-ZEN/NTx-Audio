@@ -74,14 +74,28 @@ function ENT:Think()
   -- loop walk the publish count instead of the five buses - an ever growing
   -- number of indices into a five entry table. The loop got slower and
   -- slower, which is what the rate had fallen to.
+  -- Three rates, counted separately, because they answer three different
+  -- questions: how often the entity is TICKED, how often the value actually
+  -- CHANGED, and how often it was PUBLISHED. When the last one is the odd one
+  -- out, the value is what is not moving - and when the first one is, the
+  -- entity is being throttled by something else entirely.
   local published = (self.PublishCount or 0)
+  local changedCount = (self.ChangeCount or 0)
+  local thinkCount = (self.ThinkCount or 0)
   local now = CurTime()
   if not self.PublishAt or (now - self.PublishAt) >= 1 then
     local elapsed = now - (self.PublishAt or (now - 1))
-    self.PublishRate = elapsed > 0 and (published - (self.PublishBase or 0)) / elapsed or 0
+    if elapsed > 0 then
+      self.PublishRate = (published - (self.PublishBase or 0)) / elapsed
+      self.ChangeRate = (changedCount - (self.ChangeBase or 0)) / elapsed
+      self.ThinkRate = (thinkCount - (self.ThinkBase or 0)) / elapsed
+    end
     self.PublishAt = now
     self.PublishBase = published
+    self.ChangeBase = changedCount
+    self.ThinkBase = thinkCount
   end
+  self.ThinkCount = thinkCount + 1
   -- Publish on a SCHEDULE, not only when the value changes.
   --
   -- A source that only republished on a change let the whole chain inherit
@@ -91,6 +105,7 @@ function ENT:Think()
   -- still stepping. A level that is refreshed on a schedule cannot go stale,
   -- whatever the reason it stopped changing.
   local interval = NTx.SignalInterval and NTx.SignalInterval() or (1 / 66)
+  if changed then self.ChangeCount = changedCount + 1 end
   if changed or (now - (self.LastPublishAt or 0)) >= interval then
     self.LastPublishAt = now
     self.PublishCount = published + 1
