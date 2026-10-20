@@ -145,8 +145,22 @@ net.Receive("NTx.AmpRmsReady", function(_, ply)
 end)
 
 net.Receive("NTx.AmpRms", function(_, ply)
-  if not IsValid(ply) or not ply.__ntxRmsReady then return end
-  if not rateOk(ply) then return end
+  -- Counted at every stage, so the report can name which one is dropping the
+  -- data instead of leaving it to be inferred.
+  NTx.RmsRecv = (NTx.RmsRecv or 0) + 1
+  if not IsValid(ply) then
+    NTx.RmsDropped = (NTx.RmsDropped or 0) + 1
+    return
+  end
+  if not ply.__ntxRmsReady then
+    NTx.RmsDropped = (NTx.RmsDropped or 0) + 1
+    return
+  end
+  if not rateOk(ply) then
+    NTx.RmsRateDropped = (NTx.RmsRateDropped or 0) + 1
+    return
+  end
+  NTx.RmsAccepted = (NTx.RmsAccepted or 0) + 1
   -- Format marker first. A client whose addon Lua is older than the server
   -- sends a different layout, and reading it as this one would consume the
   -- wrong floats - producing plausible-looking but wrong levels everywhere,
