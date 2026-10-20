@@ -38,11 +38,12 @@ function ENT:TriggerInput(name, value)
   self.WireIn = math.Clamp(tonumber(value) or 0, 0, 2)
 end
 
-function ENT:Think()
+-- Published from a server hook as well: GMod scales an entity's think
+-- frequency by its distance from the nearest player.
+function ENT:UpdateSignal()
   -- The signal chain's rate, not a tenth of a second: this is one of three
   -- stages the measured level passes through on its way to the amplifier, and
   -- at ten hertz the level arriving there only changed ten times a second.
-  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or 1 / 60))
   local out = math.Clamp((self.WireIn or 0) * NTx.FaderToGain(self:GetTrim()), 0, 2)
   if out ~= self.WireOut then
     self.WireOut = out
@@ -77,4 +78,9 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetBusLabel(string.sub(tostring(d.label or ""), 1, 32))
     self:SetFlat2D(d.flat == true)
   end
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or (1 / 60)))
+  self:UpdateSignal()
 end

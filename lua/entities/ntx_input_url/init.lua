@@ -39,16 +39,16 @@ end
 -- mixer decides which of them a given source feeds, per channel, which is what
 -- the per-channel bus picker is for. With no measurement every slot stays at
 -- the fader value alone.
-function ENT:Think()
+-- The level is published from a server hook, not only from here. GMod scales
+-- an entity's think frequency by its distance from the nearest player, so an
+-- entity's own Think can run five times a second while the hook runs at the
+-- tick rate - and the level reaching the amplifier was limited to that.
+function ENT:UpdateSignal()
   -- The signal chain's rate, not a tenth of a second: this is one of three
   -- stages the measured level passes through on its way to the amplifier, and
   -- at ten hertz the level arriving there only changed ten times a second.
-  -- The interval actually used, recorded so it can be reported. The entity
-  -- ticked at a fifth of the rate this asks for, and the only way to know
-  -- what the entity really got is to have the entity say.
   local interval = NTx.SignalInterval and NTx.SignalInterval() or (1 / 60)
   self.UsedInterval = interval
-  self:NextThink(CurTime() + interval)
   local vol = math.Clamp(tonumber(self:GetInputVolume()) or 0, 0, 2)
   -- A source with no URL cannot play, so it contributes NOTHING. The fallback
   -- below is the fader position, which for a source that is not playing at all
@@ -167,4 +167,9 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetInputVolume(NTx.ClampFader(d.vol))
     self:SetMaxDist(math.Clamp(tonumber(d.maxd) or 1200, 100, 10000))
   end
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or (1 / 60)))
+  self:UpdateSignal()
 end

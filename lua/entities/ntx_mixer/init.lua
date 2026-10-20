@@ -97,11 +97,10 @@ function ENT:ComputeBusOut(bus)
   return math.Clamp(math.sqrt(energy), 0, 2)
 end
 
-function ENT:Think()
-  -- The signal chain's rate, not a tenth of a second: this is one of three
-  -- stages the measured level passes through on its way to the amplifier, and
-  -- at ten hertz the level arriving there only changed ten times a second.
-  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or 1 / 60))
+-- Published from a server hook as well as from here: GMod scales an entity's
+-- own think frequency by its distance from the nearest player, so a mixer far
+-- from the player republished its bus levels at a fraction of the rate.
+function ENT:UpdateSignal()
   local levels = (NTx and NTx.BUS_PORTS) or { "MidL", "MidR", "SubL", "SubR", "SubMono" }
   local nBus = (NTx and NTx.BUS_COUNT) or 5
   -- istable, not `or {}`: a mixer saved before this change carries a number
@@ -198,4 +197,9 @@ function ENT:PostEntityPaste(ply, ent, created)
     self:SetSubMuted(d.subm == true)
   end
   if NTx.BroadcastGraph then NTx.BroadcastGraph() end
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or (1 / 60)))
+  self:UpdateSignal()
 end

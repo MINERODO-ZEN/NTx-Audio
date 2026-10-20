@@ -82,11 +82,9 @@ local function chainOf(self)
   return out
 end
 
-function ENT:Think()
-  -- The signal chain's rate, not a tenth of a second: this is one of three
-  -- stages the measured level passes through on its way to the amplifier, and
-  -- at ten hertz the level arriving there only changed ten times a second.
-  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or 1 / 60))
+-- Published from a server hook as well: GMod scales an entity's think
+-- frequency by its distance from the nearest player.
+function ENT:UpdateSignal()
   local out = 0
   if self:GetActive() then
     -- Self-powered cabinets are their own source; series wiring does not apply.
@@ -160,4 +158,9 @@ function ENT:PostEntityPaste(ply, ent, created)
   -- Duplication hands the rig to the player doing the work, so gizmos and
   -- link lines stay private to whoever is building.
   if ply and CPPI then self:CPPISetOwner(ply) end
+end
+
+function ENT:Think()
+  self:NextThink(CurTime() + (NTx.SignalInterval and NTx.SignalInterval() or (1 / 60)))
+  self:UpdateSignal()
 end
