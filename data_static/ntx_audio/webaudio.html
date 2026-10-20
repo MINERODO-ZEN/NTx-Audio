@@ -554,24 +554,31 @@ function sfxEnsure(){
   C.sfx=s;
 }
 
-// How much of a source at this distance the listener actually gets. The same
-// exponential model the panner uses, so the burial below can be worked out
-// against what is really heard rather than against the raw level.
+// How much of a source at this distance the listener actually gets.
+//
+// The panner does its own falloff and never reaches zero - it clamps at its
+// max distance - so the fan carried across the map. This is the window that
+// ends it: full out to SFX_REF, and gone by SFX_CUT.
 //
 // The first version used an inverse model with a 300-unit reference distance,
 // which is a hall: a fan three thousand units away was only twenty decibels
 // down, and it carried across the map.
 var SFX_REF=48, SFX_ROLL=2.2, SFX_MAX=3000;
+// Where the fan stops being heard at all.
+var SFX_CUT=64;
+function sfxDistanceGain(dist){
+  if(!(dist>=0)) dist=0;
+  if(dist>=SFX_CUT) return 0;
+  // A linear ramp over the last stretch, so the fan does not step off the
+  // panner's curve straight into silence.
+  var ramp=1;
+  if(dist>SFX_REF) ramp=1-(dist-SFX_REF)/(SFX_CUT-SFX_REF);
+  return Math.max(0,Math.min(1,ramp));
+}
 // The programme level, in dBFS, at which the fan starts to be buried and the
 // level at which it is completely gone. Measured programme material sits
 // around -20 dBFS, so a working rig silences the fans.
 var SFX_QUIET=-48, SFX_LOUD=-30;
-function sfxDistanceGain(dist){
-  if(!(dist>=0)) dist=0;
-  if(dist>SFX_MAX) dist=SFX_MAX;
-  if(dist<SFX_REF) dist=SFX_REF;
-  return Math.pow(SFX_REF/dist, SFX_ROLL);
-}
 
 function sfxAmp(a){
   var s=C.sfx;
@@ -598,6 +605,9 @@ function sfxAmp(a){
   e.lp.frequency.setTargetAtTime(500+Math.min(rpm/3200,1)*1400,t,0.3);
 
   var x=Number(a.x)||0, y=Number(a.y)||0, z=Number(a.z)||0;
+  // The distance to the listener, which is what the window below works on.
+  var L=C.sfx.listener, dist=0;
+  if(L) dist=Math.sqrt((x-(L.px||0))*(x-(L.px||0))+(y-(L.py||0))*(y-(L.py||0))+(z-(L.pz||0))*(z-(L.pz||0)));
   if(e.pan.positionX){
     e.pan.positionX.setTargetAtTime(x,t,0.05);
     e.pan.positionY.setTargetAtTime(y,t,0.05);
@@ -622,7 +632,9 @@ function sfxAmp(a){
   // SFX_LOUD the level at which it is completely gone.
   var pd=C.sfx.progDb===undefined?-120:C.sfx.progDb;
   var duck=Math.max(0,Math.min(1,1-(pd-SFX_QUIET)/(SFX_LOUD-SFX_QUIET)));
-  e.g.gain.setTargetAtTime(lvl*duck,t,0.3);
+  // The window is what ends the fan: the panner's own curve never reaches
+  // zero, so without it the fan is still there across the map.
+  e.g.gain.setTargetAtTime(lvl*duck*sfxDistanceGain(dist),t,0.3);
 }
 
 // A page that stops hearing from Lua must not keep droning. The panel can
