@@ -312,6 +312,7 @@ local AMBER = Color(245, 190, 60)
 local RED = Color(240, 70, 60)
 local BLUE = Color(70, 150, 245)
 local DIM = Color(120, 122, 126)
+local LED_NATIVE = 1.37      -- models/led.mdl bounding size, in model units
 
 local function led(x, y, col, alpha, radius)
   radius = radius or LED_R
@@ -340,6 +341,54 @@ local function iocLamp(s, x, y)
   end
 end
 
+-- The lamps of a PAC3 layout, or nil when the amplifier has none.
+local function pac3LampsFor(ent)
+  if not NTx.Pac3Lamps then return nil end
+  local ok, lamps = pcall(NTx.Pac3Lamps, ent)
+  if ok and lamps and #lamps > 0 then return lamps end
+  return nil
+end
+
+-- The lamps of a PAC3 layout cover the whole panel, so the readout the virtual
+-- layout draws inside it goes underneath instead. Those amplifiers get a panel
+-- this much taller, and the Derma face is sized to match.
+local PAC3_TEXT_H = 84
+
+function NTx.AmpPanelHeight(ent)
+  if pac3LampsFor(ent) then return NTx.AMP_PANEL_H + PAC3_TEXT_H end
+  return NTx.AMP_PANEL_H
+end
+
+-- The PAC3 lamps, drawn in the 2D panel.
+--
+-- The layout is in model space: +X is the front of the amplifier, Y runs
+-- across the face and Z up it. The face is mapped onto the panel with its
+-- proportions kept, so the lamps sit where the model has them.
+local function drawPac3PanelLamps(ent, lamps, rec, ox, oy, ledsOn)
+  local mn, mx = ent:GetModelBounds()
+  if not mn or not mx then return end
+  local faceW, faceH = mx.y - mn.y, mx.z - mn.z
+  if faceW <= 0 or faceH <= 0 then return end
+  local w = NTx.AMP_PANEL_W
+  local scale = math.min(w / faceW, NTx.AMP_PANEL_H / faceH)
+  local x0 = ox + (w - faceW * scale) * 0.5
+  local y0 = oy + (NTx.AMP_PANEL_H - faceH * scale) * 0.5
+  for _, lamp in ipairs(lamps) do
+    local x = x0 + (lamp.pos.y - mn.y) * scale
+    local y = y0 + (faceH - (lamp.pos.z - mn.z)) * scale
+    -- The lens colour is used lit AND unlit, like the 3D lamps: an unlit lens
+    -- is that colour at its floor, not a hole in the panel.
+    local col = lamp.lens or OFF
+    local alpha = ledsOn and NTx.Pac3LampState(ent, lamp, rec) or 0
+    -- The size is a scale modifier for the lamp model and led.mdl is
+    -- LED_NATIVE units across, so the diameter follows from it.
+    local sc = (tonumber(lamp.size) or 0) > 0 and lamp.size or 1
+    local d = math.Clamp(LED_NATIVE * sc * scale, 3, 40)
+    surface.SetDrawColor(col.r, col.g, col.b, math.max(alpha, 45))
+    surface.DrawRect(x - d * 0.5, y - d * 0.5, d, d)
+  end
+end
+
 -- Draw one amplifier front panel into the current 2D space, origin at (0,0).
 -- opts.x / opts.y offset the whole panel (the Derma face draws it inside a
 -- rounded box); the 3D version needs no offset because cam.Start3D2D already
@@ -360,8 +409,17 @@ function NTx.DrawAmpPanel(ent, opts)
   -- while the simulation runs it.
   local powered = ent:RunState() and not blown
 
+  -- A PAC3 layout replaces the virtual one: those lamps are where the model
+  -- has them, and the readout goes under the panel instead of inside it.
+  local lamps = pac3LampsFor(ent)
+  local textTop = oy + (lamps and (NTx.AMP_PANEL_H + 6) or 0)
+  local y0 = lamps and textTop or (oy + 10)
+  if lamps then
+    drawPac3PanelLamps(ent, lamps, rec, ox, oy, ledsOn)
+  end
+
   -- Power / enable lamp, left edge.
-  if ledsOn then
+  if ledsOn and not lamps then
     led(ox + 10, oy + 10, BLUE, powered and 255 or 0)
     -- Standby breathes rather than sitting dark, so a sleeping amplifier is
     -- visibly asleep instead of looking broken.
@@ -375,7 +433,6 @@ function NTx.DrawAmpPanel(ent, opts)
   local chans = ent:ActiveChannels()
   for idx, ch in ipairs(chans) do
     local x0 = ox + 22 + (idx - 1) * stripW
-    local y0 = oy + 10
     local s = NTx.AmpLedState(ent, ch)
     local c = rec and rec.ch[idx]
     local meter = (s and s.meter) or { linDb = -120, below = -120, clip = false }
@@ -383,7 +440,7 @@ function NTx.DrawAmpPanel(ent, opts)
 
     if style == 1 then
       -- Crown MA: one multifunction lamp plus the ODEP lamp beside it.
-      if ledsOn then
+      if ledsOn and not lamps then
         iocLamp(s, x0 + 8, y0)
         local red = math.min(0, (c and c.gainred) or 0)
         local lim = math.Clamp(-red / 8, 0, 1)
@@ -404,7 +461,7 @@ function NTx.DrawAmpPanel(ent, opts)
       local d10 = ledsOn and meter.below > -10
       local clipNow = ledsOn and ((c and c.clip) or (s and s.hot))
       local tempNow = ledsOn and (ent:GetTempDev() >= 80 or (c and c.protect))
-      if ledsOn then
+      if ledsOn and not lamps then
         led(x0 + 8, y0, GREEN, sig and 255 or 0)
         led(x0 + 22, y0, GREEN, d20 and 255 or 0)
         led(x0 + 36, y0, GREEN, d10 and 255 or 0)
@@ -423,7 +480,7 @@ function NTx.DrawAmpPanel(ent, opts)
   end
 
   -- Right edge: the fault lamp, and the readout the Derma panel adds.
-  if ledsOn then
+  if ledsOn and not lamps then
     local fault = (rec and rec.fault) or 0
     local faultOn = fault ~= 0 and fault ~= 9
     local blink = faultOn and (math.floor(CurTime() * 4) % 2 == 0) or false
@@ -440,8 +497,11 @@ function NTx.DrawAmpPanel(ent, opts)
     if (ent:GetDamage() or 0) > 0.01 then
       lines[#lines + 1] = string.format("DAMAGE %.0f%%", ent:GetDamage() * 100)
     end
+    -- Under a PAC3 layout the readout sits below the lamps, because the lamps
+    -- have the whole panel.
+    local readoutTop = lamps and (textTop + 36) or (oy + 48)
     for i, text in ipairs(lines) do
-      draw.SimpleText(text, "DermaDefault", ox, oy + 48 + (i - 1) * 14,
+      draw.SimpleText(text, "DermaDefault", ox, readoutTop + (i - 1) * 14,
         (i == #lines) and AMBER or (opts.dimCol or DIM), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
     end
   end
@@ -457,7 +517,6 @@ end
 -- ClientsideModel driven by hand (SetPos/SetAngles/DrawModel); the material is
 -- swapped per lamp with render.MaterialOverride so the LED colour never
 -- depends on what the model's own textures happen to look like.
-local LED_NATIVE = 1.37      -- models/led.mdl bounding size, in model units
 local LED_PX = 12            -- target lamp diameter, in virtual panel pixels
 local LED_LIFT = 0.5         -- how far the domes sit off the chassis face
 
@@ -606,13 +665,6 @@ end
 -- lamps in model space and so works for any chassis. Without one, the
 -- virtual-panel layout above is used, which keeps every amplifier that has never
 -- been authored in PAC3 looking exactly as it did.
-local function pac3LampsFor(ent)
-  if not NTx.Pac3Lamps then return nil end
-  local ok, lamps = pcall(NTx.Pac3Lamps, ent)
-  if ok and lamps and #lamps > 0 then return lamps end
-  return nil
-end
-
 local function drawPac3Lamps(ent, rec, lamps)
   -- PAC3's values are used exactly as stored, because PAC3 already renders them
   -- correctly and anything adjusted here is a guess about what the author

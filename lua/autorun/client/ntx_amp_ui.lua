@@ -165,9 +165,15 @@ buildAmpUI = function(amp)
   -- The front panel itself, drawn by the same code that draws it in 3D.
   local face = vgui.Create("DPanel", scroll)
   face:Dock(TOP)
-  face:SetTall(126)
+  -- A PAC3 layout fills the panel with its lamps and puts the readout under
+  -- it, so that panel is taller.
+  face:SetTall((NTx.AmpPanelHeight and NTx.AmpPanelHeight(amp) or 112) + 14)
   face:DockMargin(4, 4, 4, 0)
   face.Paint = function(_, w, h)
+    -- The model can be swapped while this window is open, and a PAC3 layout
+    -- makes the panel taller, so the height follows it.
+    local want = (NTx.AmpPanelHeight and NTx.AmpPanelHeight(amp) or 112) + 14
+    if face:GetTall() ~= want then face:SetTall(want) end
     draw.RoundedBox(4, 0, 0, w, h, Color(22, 22, 24))
     surface.SetDrawColor(70, 70, 76, 255)
     surface.DrawOutlinedRect(0, 0, w, h)
@@ -468,10 +474,21 @@ function NTx.OpenCabinetUI(spk)
   plbl:Dock(LEFT)
   local combo = vgui.Create("DComboBox", prow)
   combo:Dock(FILL)
-  for _, p in ipairs(NTx.AllSpeakerProfiles()) do
-    comboAdd(combo, p.name .. (p.saved and " *" or ""), p.id)
+  -- The dropdown is rebuilt when the server pushes the list, so a profile
+  -- saved from this window shows up in it instead of only in the next one.
+  local listVersion = -1
+  local function refreshProfiles()
+    combo:Clear()
+    -- The label map is keyed by the option's data, so it has to go with the
+    -- options: a deleted profile must not stay pickable.
+    combo._ntxLabel = nil
+    for _, p in ipairs(NTx.AllSpeakerProfiles()) do
+      comboAdd(combo, p.name .. (p.saved and " *" or ""), p.id)
+    end
+    comboPick(combo, spk:GetProfile())
+    listVersion = NTx.SpkListVersion or 0
   end
-  comboPick(combo, spk:GetProfile())
+  refreshProfiles()
   combo.OnSelect = function()
     net.Start("NTx.SpkProfile")
     net.WriteString("apply")
@@ -531,6 +548,14 @@ function NTx.OpenCabinetUI(spk)
   local st = label(info, "coil -", COL_DIM)
   st:Dock(FILL)
 
+  local hint = vgui.Create("DLabel", frame)
+  hint:Dock(BOTTOM)
+  hint:SetTall(16)
+  hint:DockMargin(4, 0, 4, 0)
+  hint:SetText("")
+  hint:SetTextColor(COL_WARN)
+  hint:SetFont("DermaDefaultBold")
+
   local saveRow = vgui.Create("DPanel", frame)
   saveRow:Dock(BOTTOM)
   saveRow:SetTall(30)
@@ -543,16 +568,44 @@ function NTx.OpenCabinetUI(spk)
   save:SetText("Save")
   save:SetWide(80)
   save:Dock(RIGHT)
+  local del = vgui.Create("DButton", saveRow)
+  del:SetText("Delete")
+  del:SetWide(80)
+  del:Dock(RIGHT)
+  -- Only a saved profile can go: the built-in ones are part of the addon.
+  del.DoClick = function()
+    local id = tostring(comboGet(combo) or "")
+    if not NTx.SavedSpeakerProfiles[id] then
+      hint:SetText("that one is built in")
+      return
+    end
+    net.Start("NTx.SpkProfile")
+    net.WriteString("delete")
+    net.WriteEntity(NULL)
+    net.WriteString(id)
+    net.SendToServer()
+    hint:SetText("")
+  end
   save.DoClick = function()
+    local name = NTx.SpkSanitiseName(entry:GetValue())
+    -- The server drops an empty name without a word, which looks like the
+    -- button did nothing at all.
+    if name == "" then
+      hint:SetText("give the profile a name first")
+      return
+    end
     net.Start("NTx.SpkProfile")
     net.WriteString("save")
     net.WriteEntity(spk)
-    net.WriteString(NTx.SpkSanitiseName(entry:GetValue()))
+    net.WriteString(name)
     net.SendToServer()
+    entry:SetText("")
+    hint:SetText("")
   end
 
   frame.Think = function()
     if not IsValid(spk) then return end
+    if (NTx.SpkListVersion or 0) ~= listVersion then refreshProfiles() end
     st:SetText(string.format("coil %.0f C   damage %.0f%%   %s",
       spk:GetCoilTemp(), spk:GetDamage() * 100, spk:GetBlown() and "BLOWN" or "ok"))
     st:SetTextColor(spk:GetBlown() and Color(255, 90, 90) or COL_DIM)
@@ -609,6 +662,8 @@ net.Receive("NTx.SpkList", function()
       }
     end
   end
+  -- Bumped so an open cabinet window knows its dropdown is out of date.
+  NTx.SpkListVersion = (NTx.SpkListVersion or 0) + 1
 end)
 
 -- Everything the Utilities page does with a profile, and the console verbs for
