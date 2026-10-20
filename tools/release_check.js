@@ -129,7 +129,17 @@ if (addon) {
 
 head("deployed clone (the tree a release is packed from)");
 if (!fs.existsSync(ADDON)) {
-  bad(`no deployed clone at ${ADDON}`);
+  // The clone is removed once the .gma is built: it is a deploy target, not
+  // a build artefact, and leaving it in the game's addons folder means the
+  // addon is loaded twice.
+  const gma = path.join(SRC, "ntx_audio.gma");
+  if (fs.existsSync(gma)) {
+    const mb = (fs.statSync(gma).size / 1048576).toFixed(1);
+    ok(`no deployed clone, and ntx_audio.gma is there (${mb} MiB)`);
+    console.log("        verify it with: node tools/verify_gma.js <folder> ntx_audio.gma");
+  } else {
+    bad("no deployed clone and no .gma - nothing has been built yet");
+  }
 } else {
   const depVersion = path.join(ADDON, VERSION_REL);
   if (!fs.existsSync(depVersion)) {
@@ -176,5 +186,10 @@ if (problems) {
   process.exitCode = 1;
 } else {
   console.log(`READY to pack${notes ? ` (${notes} note(s))` : ""}.`);
-  console.log(`Pack ${ADDON}, not the source tree.`);
+  if (fs.existsSync(ADDON)) {
+    console.log(`Pack ${ADDON}, not the source tree.`);
+    console.log("  node tools/build_gma.js \"<that folder>\" ntx_audio.gma");
+  } else {
+    console.log("The .gma is built. Upload it, then remove the deployed clone.");
+  }
 }
