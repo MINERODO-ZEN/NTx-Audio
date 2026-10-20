@@ -754,7 +754,10 @@ concommand.Add("ntx_leds_status", function()
           -- The server's figure against the one the client computed: they are
           -- the same quantity from two paths, and a large difference means
           -- one of them is wrong.
-          local slow = tonumber(c.linDb) or -120
+          -- The server's FAST figure, not the ten hertz one: the slow sync is
+          -- up to a hundred milliseconds old, so comparing a live client value
+          -- with it reports a difference that is only the sync's age.
+          local slow = tonumber(c.srvLinDb or c.linDb) or -120
           local fast = tonumber((NTx.AmpChannelMeter(amp, ch) or {}).linDb) or -120
           local drift = ""
           if math.abs(fast - slow) > 12 then
