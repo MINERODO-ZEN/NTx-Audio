@@ -489,7 +489,11 @@ function ntxUpdate(s){
   try{
     var target=(typeof s.norm==="number")?s.norm:(gsum>1?(1/Math.sqrt(gsum)):1);
     target=Math.max(0.12,Math.min(1,target));
-    smooth(C.master.gain,target);
+    // Client-side master volume: a user-facing trim, separate from the mix
+    // normalisation above. Applied here rather than as its own gain node so
+    // there is one smooth() on the master and no zipper on a slider drag.
+    var vol=(typeof s.vol==="number")?Math.max(0,Math.min(1,s.vol)):1;
+    smooth(C.master.gain,target*vol);
   }catch(e){}
   // Taint sampling only counts while taps are actually commanded audible:
   // a muted/gainless rig reads as analyser silence too, which is not CORS.

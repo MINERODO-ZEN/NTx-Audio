@@ -32,6 +32,7 @@ local ENGINE = {
   { "ntx_occ_mid_min", "slider", "Occluded MID volume floor", 0, 1, 2 },
   { "ntx_occ_mid_lp", "slider", "Occluded MID lowpass (Hz, 0 = gain only)", 0, 20000, 0 },
   { "ntx_webaudio_debug", "check", "Mirror page console to game console" },
+  { "ntx_client_volume", "slider", "Client master volume", 0, 1, 2 },
 }
 
 -- ConVars the SERVER owns (FCVAR_REPLICATED). A client cannot write these, so
@@ -177,7 +178,7 @@ end
 local function serverCheck(panel, text, name)
   local left = vgui.Create("DLabel", panel)
   left:SetText(text)
-  left:SetDark(true)
+  left:SetTextColor(Color(230, 230, 230))
   local right = vgui.Create("DCheckBox", panel)
   local cv = cvOf(name)
   right:SetValue(cv and cv:GetBool() or false)
@@ -188,7 +189,7 @@ end
 local function serverSlider(panel, text, name, min, max, dec)
   local left = vgui.Create("DLabel", panel)
   left:SetText(text)
-  left:SetDark(true)
+  left:SetTextColor(Color(230, 230, 230))
   local right = vgui.Create("DNumSlider", panel)
   local cv = cvOf(name)
   right:SetMinMax(min, max)
@@ -266,7 +267,7 @@ local function buildAmp(panel)
 end
 
 hook.Add("PopulateToolMenu", "NTx.AmplifierUtilities", function()
-  spawnmenu.AddToolMenuOption("Utilities", "NTx Amplifiers", "ntx_amplifiers",
+  spawnmenu.AddToolMenuOption("Utilities", "NTx Audio", "ntx_amplifiers",
     "Amplifier simulation, rig parameters and cabinet profiles",
     "", "", buildAmp, {})
 end)

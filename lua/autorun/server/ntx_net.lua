@@ -281,7 +281,10 @@ end
 -- rather than quietly corrected.
 function NTx.LinkSpeakerToAmp(ply, spk, amp, ch)
   if not IsValid(spk) or not IsValid(amp) or amp:GetClass() ~= "ntx_amplifier" then return false end
-  if spk:GetActive() then return false end
+  -- An active (self-powered) cabinet still takes its bus from an amplifier
+  -- channel: the amplifier processes the signal even though it does not power
+  -- the cabinet. Only the load calculation skips it, and that is done in the
+  -- simulation, not here.
   if not canEdit(ply, amp) then return false end
   local usable = amp:UsableChannels()
   ch = math.floor(tonumber(ch) or 0)

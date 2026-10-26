@@ -65,6 +65,8 @@ end
 
 local cvMaxPages = CreateClientConVar("ntx_max_pages", "4", true, false,
   "Max simultaneous WebAudio mixer pages (one per input)")
+local cvClientVolume = CreateClientConVar("ntx_client_volume", "1", true, false,
+  "Client-side master volume (0-1)")
 local cvCardioidMs = CreateClientConVar("ntx_cardioid_ms", "2.9", true, false,
   "Rear-box delay for cardioid SUB setups, milliseconds (approx 1 m spacing)")
 local cvEndfireM = CreateClientConVar("ntx_endfire_m", "1.0", true, false,
@@ -299,7 +301,7 @@ local function buildTaps(input, mrec, listenerPos)
       -- nil means "no bus": the tap takes the full source, as it always did.
       local busId = nil
       local ampEnt = IsValid(s.ent) and s.ent.GetAmp and s.ent:GetAmp() or nil
-      if IsValid(ampEnt) and ampEnt:GetClass() == "ntx_amplifier" and not s.ent:GetActive() then
+      if IsValid(ampEnt) and ampEnt:GetClass() == "ntx_amplifier" then
         local ch = NTx.AmpSpeakerChannel(ampEnt, s.ent)
         local data = ch > 0 and NTx.AmpTapData(ampEnt, ch) or nil
         if data then
@@ -568,9 +570,8 @@ function NTx.WebAudioOnStatus(pkey, json)
           .. " Send this line plus ntx_audio_status. Input latched silent meanwhile.")
       end
     else
-      print("[NTx] WebAudio: source near-silent (mean " .. srcMean .. ", variance " .. srcVar
-        .. ") - dead air or subsonic/DC content suspected; highpass chains correctly pass nothing. "
-        .. "No latch: audio resumes on its own if the source returns. " .. bis)
+      -- Source near-silent: no latch, no print. The user asked for silence here;
+      -- a sine wave at a null lands on it, and it says nothing useful.
     end
   elseif r.t == "playing" then
     local P = NTx.WebAudio.Pages[pkey]
@@ -815,6 +816,7 @@ hook.Add("Think", "NTx.WebAudioThink", function()
         lim = (cvLimiter:GetBool() and 1) or 0,
         limDb = cvLimiterDb:GetFloat(),
         limRatio = cvLimiterRatio:GetFloat(),
+        vol = cvClientVolume:GetFloat(),
         smoothMs = cvMotionSmooth:GetFloat(),
         maxRate = cvMotionRate:GetFloat(),
       }

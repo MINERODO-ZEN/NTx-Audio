@@ -392,8 +392,11 @@ local function stepAmp(amp, now, dt)
     if c.linDb > 30 or c.linDb < -120 then
       if not st.warnedLevel then
         st.warnedLevel = true
-        print(string.format("[NTx] amplifier %d channel %d produced an impossible level %.1f dBu (lin=%s)",
-          amp:EntIndex(), ch, c.linDb, tostring(lin)))
+        local cv = GetConVar("ntx_amp_debug")
+        if cv and cv:GetBool() then
+          print(string.format("[NTx] amplifier %d channel %d produced an impossible level %.1f dBu (lin=%s)",
+            amp:EntIndex(), ch, c.linDb, tostring(lin)))
+        end
       end
     end
     c.lin = lin
@@ -469,8 +472,11 @@ local function stepAmp(amp, now, dt)
   end
   if amp:GetDamage() >= 1 and not amp:GetBlown() then
     amp:SetBlown(true)
-    print("[NTx] amplifier ent " .. amp:EntIndex() .. " (" .. (amp:GetProfile() or "?")
-      .. ") burnt out - replace it.")
+    local cv = GetConVar("ntx_amp_debug")
+    if cv and cv:GetBool() then
+      print("[NTx] amplifier ent " .. amp:EntIndex() .. " (" .. (amp:GetProfile() or "?")
+        .. ") burnt out - replace it.")
+    end
     hook.Run("NTx.AmpBurnt", amp)
   end
 
@@ -518,8 +524,11 @@ local function stepAmp(amp, now, dt)
   if amp:GetFaultCode() ~= fault then
     amp:SetFaultCode(fault)
     if fault ~= 0 and fault ~= 9 then
-      print("[NTx] amplifier ent " .. amp:EntIndex() .. ": " .. NTx.AmpFaultName(fault)
-        .. " (" .. math.Round(totalOut, 1) .. " W out, " .. math.Round(st.tsink, 1) .. " C sink)")
+      local cv = GetConVar("ntx_amp_debug")
+      if cv and cv:GetBool() then
+        print("[NTx] amplifier ent " .. amp:EntIndex() .. ": " .. NTx.AmpFaultName(fault)
+          .. " (" .. math.Round(totalOut, 1) .. " W out, " .. math.Round(st.tsink, 1) .. " C sink)")
+      end
     end
   end
 
@@ -578,10 +587,13 @@ local function stepSpeakers(now, dt)
           spk:SetDamage(nxt)
           if nxt >= 1 and not spk:GetBlown() then
             spk:SetBlown(true)
-            print("[NTx] speaker ent " .. spk:EntIndex() .. " blown: "
-              .. math.Round(rms, 1) .. " W rms into a " .. math.Round(rmsW, 1)
-              .. " W driver (" .. math.Round(ss.peak or 0, 1) .. " W peak, coil "
-              .. math.Round(ss.temp or 0, 1) .. " C).")
+            local cv = GetConVar("ntx_amp_debug")
+            if cv and cv:GetBool() then
+              print("[NTx] speaker ent " .. spk:EntIndex() .. " blown: "
+                .. math.Round(rms, 1) .. " W rms into a " .. math.Round(rmsW, 1)
+                .. " W driver (" .. math.Round(ss.peak or 0, 1) .. " W peak, coil "
+                .. math.Round(ss.temp or 0, 1) .. " C).")
+            end
             hook.Run("NTx.SpeakerBlown", spk)
           end
         end

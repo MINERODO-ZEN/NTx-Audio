@@ -62,14 +62,9 @@ concommand.Add("ntx_amp_status", function()
   end
 end)
 
-local nextDebug = 0
-hook.Add("Think", "NTx.AmpDebug", function()
-  local cv = GetConVar("ntx_amp_debug")
-  if not cv or not cv:GetBool() then return end
-  if CurTime() < nextDebug then return end
-  nextDebug = CurTime() + 2
-  RunConsoleCommand("ntx_amp_status")
-end)
+-- The periodic status dump is gone: players are expected to read the LEDs and
+-- build their own alert systems with wire. ntx_amp_status still works on
+-- demand for debugging.
 
 -- ------------------------------------------------------------------ decoding
 
