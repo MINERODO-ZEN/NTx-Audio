@@ -433,7 +433,11 @@ function ntxUpdate(s){
   // and fully transparent (ratio 1) when the operator disables it.
   try{
     var limOn=(s.lim===1||s.lim===true);
+    // A knee of 6 started compressing 6 dB below the threshold, which is
+    // what made a working rig sound squashed. A hard knee only engages at
+    // the threshold itself, so the limiter is a limiter and not a compressor.
     C.comp.ratio.value=limOn?20:1;
+    C.comp.knee.value=0;
     C.comp.threshold.value=limOn?(typeof s.limDb==="number"?s.limDb:-0.5):0;
     C.comp.attack.value=0.001; C.comp.release.value=0.25;
   }catch(e){}
@@ -489,10 +493,11 @@ function ntxUpdate(s){
   }catch(e){}
   // Taint sampling only counts while taps are actually commanded audible:
   // a muted/gainless rig reads as analyser silence too, which is not CORS.
-  // Tap mean/variance separates the three silences: exact digital zeros
-  // (CORS taint OR true silence), DC-offset dead air (nonzero mean, ~zero
-  // variance — inaudible, and correctly stripped by the highpass chains),
-  // and real energy vanishing downstream (chain bug, never the source).
+  // Tap mean/variance separates two cases: real energy vanishing downstream
+  // (chain bug, never the source, latched loudly), and everything else
+  // (correctly filtered to nothing, no latch). Exact digital silence is NOT
+  // treated as taint: a sine wave at a null can land on it, so it says
+  // nothing about CORS.
   if(gsum<=0.001){ C.checks=0; C.zeroWins=0; C.tsum=0; C.tsq=0; C.tn=0; }
   else try{
     if(C.audio&&C.audio.readyState>1&&!C.audio.paused&&C.audio.currentTime>0.5){

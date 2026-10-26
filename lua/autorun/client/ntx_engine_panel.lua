@@ -25,6 +25,7 @@ local ENGINE = {
   { "ntx_cardioid_ms", "slider", "Cardioid rear-box delay (ms)", 0, 20, 1 },
   { "ntx_endfire_m", "slider", "Endfire cabinet spacing (m)", 0, 5, 2 },
   { "ntx_bass_smooth", "slider", "BASS 3D tap smoothing (ms)", 0, 300, 0 },
+  { "ntx_mute_distance", "slider", "BASS hard-mute range (units)", 100, 100000, 0 },
   { "ntx_occlusion_rays", "slider", "Wall-occlusion star traces (0 = off)", 0, 128, 0 },
   { "ntx_occlusion_min", "slider", "Occluded bus volume floor", 0, 1, 2 },
   { "ntx_occ_mid_min", "slider", "Occluded MID volume floor", 0, 1, 2 },
@@ -37,8 +38,10 @@ local ENGINE = {
 local SERVER_OWNED = {
   ntx_page_base = "Page host",
   ntx_max_channels = "Max BASS taps per client",
-  ntx_mute_distance = "BASS hard-mute range (units)",
   ntx_update_hz = "Graph rebroadcast cap (Hz)",
+  ntx_amp_sim_hz = "Amplifier simulation rate (Hz)",
+  ntx_meter_hz = "Meter rate (Hz)",
+  ntx_signal_hz = "Signal chain rate (Hz)",
   ntx_amp_rms_send = "Send measured levels to the server (0 = off)",
   ntx_mixer_admin_only = "Mixer edits limited to admins",
 }

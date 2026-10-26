@@ -541,10 +541,11 @@ function NTx.WebAudioOnStatus(pkey, json)
       bis = bis .. " STALE page file - re-upload webaudio.html!"
     end
     if not (P and P.inputEnt and IsValid(P.inputEnt)) then return end
-    -- Three silences, three responses:
+    -- Two silences, two responses:
     -- (1) real energy in, nothing out = chain anomaly, latch loudly;
-    -- (2) exact digital zeros = CORS taint OR true silence, latch + bus test;
-    -- (3) DC-offset/dead air = correctly filtered to nothing, no latch.
+    -- (2) anything else = correctly filtered to nothing, no latch. Exact
+    --     digital silence is NOT treated as taint: a sine wave at a null can
+    --     land on it, so it says nothing about CORS.
     if srcVar >= 2 then
       NTx.Tainted[P.inputEnt] = true
       if not NTx.TaintedNoticed[P.inputEnt] then
@@ -563,17 +564,6 @@ function NTx.WebAudioOnStatus(pkey, json)
         print("[NTx] WebAudio anomaly: audible energy enters (var " .. srcVar .. ") but master silent. "
           .. "Blame: " .. blame .. ". " .. bis
           .. " Send this line plus ntx_audio_status. Input latched silent meanwhile.")
-      end
-    elseif srcVar == 0 and srcMean == 128 then
-      if not NTx.Tainted[P.inputEnt] then
-        NTx.Tainted[P.inputEnt] = true
-        if not NTx.TaintedNoticed[P.inputEnt] then
-          NTx.TaintedNoticed[P.inputEnt] = true
-          print("[NTx] WebAudio: exact digital silence for 3 s - CORS taint or a dead mount, "
-            .. "indistinguishable here. This client renders WebAudio only, so its fallback "
-            .. "buses stay silent by design: set ntx_backend bass to tell a CORS/page fault "
-            .. "from a mount that emits nothing. " .. bis .. " See probe: ntx_audio_probe <url>")
-        end
       end
     else
       print("[NTx] WebAudio: source near-silent (mean " .. srcMean .. ", variance " .. srcVar
