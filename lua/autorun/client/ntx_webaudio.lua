@@ -76,6 +76,8 @@ local cvLimiter = CreateClientConVar("ntx_limiter", "1", true, false,
   "Safety limiter on the WebAudio master bus (1 = on, 0 = off)")
 local cvLimiterDb = CreateClientConVar("ntx_limiter_db", "-0.5", true, false,
   "Limiter threshold in dBFS (only bites above this)")
+local cvLimiterRatio = CreateClientConVar("ntx_limiter_ratio", "20", true, false,
+  "Limiter ratio (1 = off, 20 = brick wall)")
 -- Motion smoothing: positions are interpolated in-page every frame, so the
 -- push rate is just a target refresh, not the smoothness.
 NTx.TapSide = NTx.TapSide or {}
@@ -812,6 +814,7 @@ hook.Add("Think", "NTx.WebAudioThink", function()
         url = pend.url, listener = listener, sp = pend.taps, norm = norm,
         lim = (cvLimiter:GetBool() and 1) or 0,
         limDb = cvLimiterDb:GetFloat(),
+        limRatio = cvLimiterRatio:GetFloat(),
         smoothMs = cvMotionSmooth:GetFloat(),
         maxRate = cvMotionRate:GetFloat(),
       }

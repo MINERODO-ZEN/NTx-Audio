@@ -18,6 +18,7 @@ local ENGINE = {
   { "ntx_max_pages", "slider", "Max WebAudio pages (one per input)", 1, 8, 0 },
   { "ntx_limiter", "check", "Safety limiter on the WebAudio master" },
   { "ntx_limiter_db", "slider", "Limiter threshold (dBFS)", -12, 0, 1 },
+  { "ntx_limiter_ratio", "slider", "Limiter ratio (1 = off)", 1, 100, 0 },
   { "ntx_headroom_db", "slider", "Mix headroom (dB)", -12, 0, 1 },
   { "ntx_push_hz", "slider", "State push rate (Hz)", 5, 60, 0 },
   { "ntx_motion_smooth", "slider", "Motion smoothing (ms)", 0, 300, 0 },

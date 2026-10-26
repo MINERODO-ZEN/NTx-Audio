@@ -77,7 +77,7 @@ var AC=window.AudioContext||window.webkitAudioContext;
   // sum; this catches the transients that slip through it.
   C.comp=C.ctx.createDynamicsCompressor();
   try{
-    C.comp.threshold.value=-9; C.comp.knee.value=6; C.comp.ratio.value=14;
+    C.comp.threshold.value=-9; C.comp.knee.value=0; C.comp.ratio.value=14;
     C.comp.attack.value=0.004; C.comp.release.value=0.25;
   }catch(e){}
   C.master.connect(C.analyser); C.analyser.connect(C.comp); C.comp.connect(C.ctx.destination);
@@ -436,7 +436,7 @@ function ntxUpdate(s){
     // A knee of 6 started compressing 6 dB below the threshold, which is
     // what made a working rig sound squashed. A hard knee only engages at
     // the threshold itself, so the limiter is a limiter and not a compressor.
-    C.comp.ratio.value=limOn?20:1;
+    C.comp.ratio.value=limOn?(typeof s.limRatio==="number"?s.limRatio:20):1;
     C.comp.knee.value=0;
     C.comp.threshold.value=limOn?(typeof s.limDb==="number"?s.limDb:-0.5):0;
     C.comp.attack.value=0.001; C.comp.release.value=0.25;
