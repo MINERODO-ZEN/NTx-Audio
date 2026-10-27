@@ -74,7 +74,9 @@ local function busRow(parent, name, which, mixer)
   row:Dock(TOP)
   row:SetTall(36)
   row:DockMargin(4, 4, 4, 0)
-  row:SetBackgroundColor(Color(24, 24, 28))
+  row.Paint = function(_, w, h)
+    draw.RoundedBox(4, 0, 0, w, h, Color(24, 24, 28))
+  end
   local lbl = label(row, name)
   lbl:SetFont("DermaDefaultBold")
   lbl:SetWide(70)
@@ -84,6 +86,7 @@ local function busRow(parent, name, which, mixer)
   slider:SetMinMax(0, 2)
   slider:SetDecimals(2)
   slider:SetValue(fader)
+  if slider.TextEntry then slider.TextEntry:SetTextColor(COL_TEXT) end
   local mute = checkLabel(row, "Mute")
   mute:SetValue(muted)
   mute:Dock(RIGHT)
@@ -107,11 +110,11 @@ function NTx.OpenMixerUI(mixer)
   frame:SetSize(math.min(520, ScrW() * 0.6), math.min(560, ScrH() * 0.75))
   frame:Center()
   frame:MakePopup()
-  frame:SetBackgroundColor(Color(20, 20, 24))
   openMixer = frame
 
   local scroll = vgui.Create("DScrollPanel", frame)
   scroll:Dock(FILL)
+  scroll.Paint = function(_, w, h) draw.RoundedBox(0, 0, w, h, Color(20, 20, 24)) end
 
   busRow(scroll, "Master", "master", mixer)
   busRow(scroll, "MID bus", "mid", mixer)
