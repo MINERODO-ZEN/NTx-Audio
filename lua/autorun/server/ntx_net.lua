@@ -589,6 +589,11 @@ net.Receive("NTx.AmpLink", function(_, ply)
   local amp = net.ReadEntity()
   local ch = net.ReadUInt(4)
   if not IsValid(spk) or not IsValid(amp) then return end
+  if not canEdit(ply, spk) then
+    ply:ChatPrint("[NTx] Cannot link cabinet [" .. spk:EntIndex() .. "]: "
+      .. (editRefusal(ply, spk) or "not permitted"))
+    return
+  end
   local ok, why = NTx.LinkSpeakerToAmp(ply, spk, amp, ch)
   if ok then
     ply:ChatPrint("[NTx] Cabinet " .. spk:EntIndex() .. " -> amplifier "
@@ -602,10 +607,15 @@ end)
 
 net.Receive("NTx.AmpUnlink", function(_, ply)
   local spk = net.ReadEntity()
-  if IsValid(spk) and IsValid(ply) then
-    spk:SetAmp(NULL)
-    spk:SetAmpChannel(0)
+  if not IsValid(spk) or spk:GetClass() ~= "ntx_speaker" then return end
+  if not IsValid(ply) then return end
+  if not canEdit(ply, spk) then
+    ply:ChatPrint("[NTx] Cannot unlink cabinet [" .. spk:EntIndex() .. "]: "
+      .. (editRefusal(ply, spk) or "not permitted"))
+    return
   end
+  spk:SetAmp(NULL)
+  spk:SetAmpChannel(0)
 end)
 
 -- Server-owned simulation ConVars, changeable from the Utilities page. Only the
@@ -624,6 +634,13 @@ local SIM_CVARS = {
 
 net.Receive("NTx.CvarSet", function(_, ply)
   if not IsValid(ply) then return end
+  -- Server settings affect everyone on the server, so only admins may
+  -- change them. The panel already reports them as server-owned, but the
+  -- network message had no permission check at all.
+  if not ply:IsAdmin() then
+    ply:ChatPrint("[NTx] Server settings require admin.")
+    return
+  end
   local name = net.ReadString()
   local spec = SIM_CVARS[name]
   local cv = GetConVar(name)
@@ -640,6 +657,11 @@ end)
 
 net.Receive("NTx.AmplifierEditAll", function(_, ply)
   if not IsValid(ply) then return end
+  -- Reset/cool applies to every amplifier on the map, so only admins.
+  if not ply:IsAdmin() then
+    ply:ChatPrint("[NTx] Amplifier-wide actions require admin.")
+    return
+  end
   local what = net.ReadString()
   local count = 0
   for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
