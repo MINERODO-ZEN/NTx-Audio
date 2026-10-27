@@ -176,27 +176,33 @@ end
 -- writing a replicated ConVar only changes its own copy, and the checkbox would
 -- then show a setting the server is ignoring.
 local function serverCheck(panel, text, name)
-  local left = vgui.Create("DLabel", panel)
+  -- DForm's own CheckBox is a single DCheckBoxLabel that binds its own
+  -- convar. We cannot use it here because these are server convars, so the
+  -- value is read and written by hand - but the control is still one widget,
+  -- laid out the way DForm lays out its own, so it looks like the rest.
+  local left = vgui.Create("DCheckBoxLabel", panel)
   left:SetText(text)
   left:SetTextColor(Color(230, 230, 230))
-  local right = vgui.Create("DCheckBox", panel)
   local cv = cvOf(name)
-  right:SetValue(cv and cv:GetBool() or false)
-  right.OnChange = function(_, v) sendCvar(name, v, true) end
-  panel:AddItem(left, right)
+  left:SetValue(cv and cv:GetBool() or false)
+  left.OnChange = function(_, v) sendCvar(name, v, true) end
+  panel:AddItem(left, nil)
 end
 
 local function serverSlider(panel, text, name, min, max, dec)
-  local left = vgui.Create("DLabel", panel)
-  left:SetText(text)
-  left:SetTextColor(Color(230, 230, 230))
+  -- One DNumSlider, full width, with its own label - the same shape DForm's
+  -- NumSlider uses. The two-widget version (a DLabel beside a DNumSlider)
+  -- left the slider too narrow to show its track, which is what made these
+  -- rows look like text boxes.
   local right = vgui.Create("DNumSlider", panel)
-  local cv = cvOf(name)
+  right:SetText(text)
   right:SetMinMax(min, max)
-  right:SetDecimals(dec)
+  right:SetDecimals(dec == nil and 2 or dec)
+  local cv = cvOf(name)
   right:SetValue(cv and cv:GetFloat() or min)
+  if right.TextEntry then right.TextEntry:SetTextColor(Color(230, 230, 230)) end
   right.OnValueChanged = function(_, v) sendCvar(name, v) end
-  panel:AddItem(left, right)
+  panel:AddItem(right, nil)
 end
 
 local function buildAmpContents(panel)
