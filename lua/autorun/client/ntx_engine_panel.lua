@@ -200,6 +200,7 @@ local function serverSlider(panel, text, name, min, max, dec)
   right:SetDecimals(dec == nil and 2 or dec)
   local cv = cvOf(name)
   right:SetValue(cv and cv:GetFloat() or min)
+  if right.Label then right.Label:SetTextColor(Color(230, 230, 230)) end
   if right.TextEntry then right.TextEntry:SetTextColor(Color(230, 230, 230)) end
   right.OnValueChanged = function(_, v) sendCvar(name, v) end
   panel:AddItem(right, nil)

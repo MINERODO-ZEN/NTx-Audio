@@ -118,6 +118,7 @@ local function buildFields(parent, ent, fields, getter, sender)
       else
         ctl = vgui.Create("DNumSlider", r)
         ctl:Dock(FILL)
+        if ctl.Label then ctl.Label:SetTextColor(COL_TEXT) end
         if ctl.TextEntry then ctl.TextEntry:SetTextColor(COL_TEXT) end
         ctl:SetMinMax(entry.min, entry.max)
         local decimals = entry.step < 0.1 and 2 or (entry.step < 1 and 1 or 0)
