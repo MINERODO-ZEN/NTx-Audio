@@ -114,7 +114,7 @@ function NTx.OpenMixerUI(mixer)
 
   local scroll = vgui.Create("DScrollPanel", frame)
   scroll:Dock(FILL)
-  scroll.Paint = function(_, w, h) draw.RoundedBox(0, 0, w, h, Color(20, 20, 24)) end
+  scroll.Paint = function(_, w, h) draw.RoundedBox(0, 0, 0, w, h, Color(20, 20, 24)) end
 
   busRow(scroll, "Master", "master", mixer)
   busRow(scroll, "MID bus", "mid", mixer)
