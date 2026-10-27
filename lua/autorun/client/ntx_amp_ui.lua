@@ -67,12 +67,15 @@ local function buildFields(parent, ent, fields, getter, sender)
   local refreshing = false
   for _, entry in ipairs(fields) do
     if entry.label ~= "" and entry.set and not entry.hidden and not isLocked(entry.name) then
-      local r = row(parent)
+      local value = getter(entry.name)
+      local isBool = entry.min == 0 and entry.max == 1
+      -- A DNumSlider needs ~46 px to show its track and its text entry;
+      -- anything less clips the slider and leaves what looks like a text box.
+      local isSlider = not entry.choices and not entry.isString and not isBool
+      local r = row(parent, isSlider and 46 or 26)
       local lbl = label(r, entry.label)
       lbl:SetWide(150)
       lbl:Dock(LEFT)
-      local value = getter(entry.name)
-      local isBool = entry.min == 0 and entry.max == 1
       local ctl
       if entry.choices then
         -- A field with a fixed set of values is a dropdown, not a slider: a
@@ -92,6 +95,7 @@ local function buildFields(parent, ent, fields, getter, sender)
       elseif entry.isString then
         ctl = vgui.Create("DTextEntry", r)
         ctl:Dock(FILL)
+        ctl:SetTextColor(COL_TEXT)
         ctl:SetText(tostring(value or ""))
         -- On enter, not on every keystroke: a half-typed array id is not a
         -- value the server should be handed.
@@ -114,6 +118,7 @@ local function buildFields(parent, ent, fields, getter, sender)
       else
         ctl = vgui.Create("DNumSlider", r)
         ctl:Dock(FILL)
+        if ctl.TextEntry then ctl.TextEntry:SetTextColor(COL_TEXT) end
         ctl:SetMinMax(entry.min, entry.max)
         local decimals = entry.step < 0.1 and 2 or (entry.step < 1 and 1 or 0)
         ctl:SetDecimals(decimals)
