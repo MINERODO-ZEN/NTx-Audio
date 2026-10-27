@@ -82,7 +82,7 @@ local function buildContents(panel)
   panel:Clear()
 
   local backend = NTx.EffectiveBackend and NTx.EffectiveBackend() or "?"
-  panel:Help("NTx audio engine")
+  panel:Help("NTx Audio Engine")
   local warn = panel:Help(
     "WARNING: engine internals. Only change these if you know what you are doing - " ..
     "wrong values can silence or break all NTx audio. Use \"Restore engine defaults\" below to undo.")
@@ -142,7 +142,7 @@ end
 -- window, no console command. The option name is just a spawnmenu identity.
 hook.Add("PopulateToolMenu", "NTx.EngineUtilities", function()
   spawnmenu.AddToolMenuOption("Utilities", "NTx Audio", "ntx_engine",
-    "NTx audio engine",
+    "NTx Audio Engine",
     "", "", build, {})
 end)
 
