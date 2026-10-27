@@ -120,6 +120,10 @@ local function buildFields(parent, ent, fields, getter, sender)
         ctl:Dock(FILL)
         if ctl.Label then ctl.Label:SetTextColor(COL_TEXT) end
         if ctl.TextEntry then ctl.TextEntry:SetTextColor(COL_TEXT) end
+        -- ApplySchemeSettings copies the label colour onto the slider notches
+        -- and the text entry. It has to run AFTER the colour is set, or the
+        -- notches keep the skin's dark colour and vanish on a dark row.
+        ctl:ApplySchemeSettings()
         ctl:SetMinMax(entry.min, entry.max)
         local decimals = entry.step < 0.1 and 2 or (entry.step < 1 and 1 or 0)
         ctl:SetDecimals(decimals)

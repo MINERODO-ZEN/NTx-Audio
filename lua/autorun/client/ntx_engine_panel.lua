@@ -202,6 +202,8 @@ local function serverSlider(panel, text, name, min, max, dec)
   right:SetValue(cv and cv:GetFloat() or min)
   if right.Label then right.Label:SetTextColor(Color(230, 230, 230)) end
   if right.TextEntry then right.TextEntry:SetTextColor(Color(230, 230, 230)) end
+  -- The notches are coloured from the label, and only when this runs.
+  right:ApplySchemeSettings()
   right.OnValueChanged = function(_, v) sendCvar(name, v) end
   panel:AddItem(right, nil)
 end
