@@ -233,32 +233,8 @@ local function buildAmpContents(panel)
     .. " voltage above. Wire a number pad or an E2 to MainsV for a venue-wide brownout.")
   panel:NumSlider("Fallback meter level without page RMS (dBFS)", "ntx_amp_rms_db", -90, -20, 0)
 
-  panel:Help("Cabinet profiles")
-  panel:ControlHelp("Built in: " .. table.concat(NTx.SpeakerProfileIds(), ", "))
-  local savedIds = {}
-  for id in pairs(NTx.SavedSpeakerProfiles or {}) do savedIds[#savedIds + 1] = id end
-  table.sort(savedIds)
-  if #savedIds == 0 then
-    panel:ControlHelp("No saved profiles yet: aim at a cabinet and run ntx_spk_save <name>.")
-  end
-  for _, id in ipairs(savedIds) do
-    local p = NTx.SavedSpeakerProfiles[id]
-    local left = vgui.Create("DLabel", panel)
-    left:SetText(string.format("%s (%s)", p.name, id))
-    left:SetDark(true)
-    local del = vgui.Create("DButton", panel)
-    del:SetText("Delete")
-    del.DoClick = function()
-      -- The profiles are the client's own; the server never had a copy.
-      NTx.DeleteSpeakerProfile(id)
-    end
-    panel:AddItem(left, del)
-  end
-  panel:ControlHelp("Aim at a ntx_speaker, then: ntx_spk_save <name> / ntx_spk_apply <id>.")
-
   panel:Help("Diagnostics")
   panel:Button("Print amplifier status", "ntx_amp_status")
-  panel:Button("List cabinet profiles", "ntx_spk_list")
   panel:Button("Clear every clip LED and fault", function() sendAll("reset") end)
   panel:Button("Restore fans and mains on every amp", function() sendAll("cool") end)
 end
@@ -277,7 +253,7 @@ end
 
 hook.Add("PopulateToolMenu", "NTx.AmplifierUtilities", function()
   spawnmenu.AddToolMenuOption("Utilities", "NTx Audio", "ntx_amplifiers",
-    "Amplifier simulation, rig parameters and cabinet profiles",
+    "NTx Amplifiers",
     "", "", buildAmp, {})
 end)
 
