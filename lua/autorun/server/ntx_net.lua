@@ -242,6 +242,19 @@ end)
 local function canEdit(ply, ent)
   if not IsValid(ply) or not IsValid(ent) then return false end
   if ply:IsAdmin() then return true end
+  -- FPP: a buddy can touch the owner's props. FPP's API varies by version,
+  -- so every call is guarded; a mod that is not installed leaves these
+  -- nil and the check falls through to ownership.
+  if FPP then
+    if FPP.canTouch then
+      local ok, r = pcall(FPP.canTouch, ply, ent)
+      if ok and r then return true end
+    end
+    if ply.FPPCanTouch then
+      local ok, r = pcall(ply.FPPCanTouch, ply, ent)
+      if ok and r then return true end
+    end
+  end
   local owner = ent.CPPIGetOwner and ent:CPPIGetOwner()
   if owner == ply then return true end
   -- Shared/public rigs (unowned) can optionally be locked to admins so
