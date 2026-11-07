@@ -284,7 +284,7 @@ for _, spec in ipairs({
     thermal = { kdev = spec.kdev, twarn = 85, tderate = 100, tprotect = 115,
                 tdestroy = 135, tsink = 80 },
     ratedW = { dual = spec.w8, bridge = spec.bw8 },
-    note = "Powersoft K" .. spec.id:upper() .. ": universal 100-240 V +/-10% regulated switch mode with PFC, so output power is flat across the mains range and only the current draw moves (K10 draws 2500 W at both 230 V and 115 V, 11.3 A against 22.6 A). 7 front-panel LEDs per channel: 5 x green meter, then yellow and red for alarms. Peak limiter plus TruePower RMS voltage/current limiting. Thermal numbers are derived from the published dissipation, not published.",
+    note = "Powersoft K" .. spec.id:upper() .. ": universal 100-240 V +/-10% regulated switch mode with PFC, so output power is flat across the mains range and only the current draw moves. 7 front-panel LEDs per channel: 5 x green meter, then yellow and red for alarms. Peak limiter plus TruePower RMS voltage/current limiting. Thermal numbers are derived from the published dissipation, not published.",
   }
   -- Everything shared comes from the template. Merged rather than copied
   -- field by field: an explicit list drops anything added to the template
