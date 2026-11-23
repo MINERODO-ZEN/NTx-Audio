@@ -109,41 +109,36 @@ function smoothVec(cur,tgt,dt,maxRate){
   cur[0]=nx; cur[1]=ny; cur[2]=nz;
   return cur;
 }
+function orthoBasis(fc,uc){
+  var fl=Math.sqrt(fc[0]*fc[0]+fc[1]*fc[1]+fc[2]*fc[2])||1;
+  var ul=Math.sqrt(uc[0]*uc[0]+uc[1]*uc[1]+uc[2]*uc[2])||1;
+  var fx=fc[0]/fl, fy=fc[1]/fl, fz=fc[2]/fl;
+  var ux=uc[0]/ul, uy=uc[1]/ul, uz=uc[2]/ul;
+  var dp=fx*ux+fy*uy+fz*uz;
+  ux-=fx*dp; uy-=fy*dp; uz-=fz*dp;
+  var ul2=Math.sqrt(ux*ux+uy*uy+uz*uz);
+  if(ul2<1e-4){
+    ux=Math.abs(fx)<0.9?-fx:0; uy=Math.abs(fx)<0.9?0:-fy; uz=Math.abs(fx)<0.9?1:0;
+    var d2=fx*ux+fy*uy+fz*uz;
+    ux-=fx*d2; uy-=fy*d2; uz-=fz*d2;
+    ul2=Math.sqrt(ux*ux+uy*uy+uz*uz)||1;
+  }
+  return [fx,fy,fz,ux/ul2,uy/ul2,uz/ul2];
+}
 function motionFrame(){
   if(!C.ctx) return;
   var now=(typeof performance!=="undefined"&&performance.now)?performance.now():Date.now();
   var dt=C.lastFrame?Math.min(0.1,(now-C.lastFrame)/1000):1/60;
   C.lastFrame=now;
   var mr=(C.maxRate>0)?C.maxRate:0;
-  // Listener: pose AND orientation, so walking never staircases either.
   if(C.listenerCur&&C.listenerTgt){
     smoothVec(C.listenerCur.p,C.listenerTgt.p,dt,mr);
     smoothVec(C.listenerCur.f,C.listenerTgt.f,dt,0);
     smoothVec(C.listenerCur.u,C.listenerTgt.u,dt,0);
     try{
-      var cl=C.ctx.listener, pc=C.listenerCur.p, fc=C.listenerCur.f, uc=C.listenerCur.u;
-      var fl=Math.sqrt(fc[0]*fc[0]+fc[1]*fc[1]+fc[2]*fc[2])||1;
-      var ul=Math.sqrt(uc[0]*uc[0]+uc[1]*uc[1]+uc[2]*uc[2])||1;
-      // A proper orthonormal basis. The old hardcoded up=(0,0,1) is
-      // parallel to forward whenever the camera looks near vertical, and a
-      // degenerate listener basis makes the HRTF panner re-pick a
-      // convolution pair mid-quantum - that is the click you get when
-      // turning the camera (moving was fine: only the orientation moved).
-      var fx=fc[0]/fl, fy=fc[1]/fl, fz=fc[2]/fl;
-      var ux=uc[0]/ul, uy=uc[1]/ul, uz=uc[2]/ul;
-      var dp=fx*ux+fy*uy+fz*uz;
-      ux-=fx*dp; uy-=fy*dp; uz-=fz*dp;
-      var ul2=Math.sqrt(ux*ux+uy*uy+uz*uz);
-      if(ul2<1e-4){ // still parallel after projection: pick any perpendicular
-        ux=Math.abs(fx)<0.9?-fx:0; uy=Math.abs(fx)<0.9?0:-fy; uz=Math.abs(fx)<0.9?1:0;
-        var d2=fx*ux+fy*uy+fz*uz;
-        ux-=fx*d2; uy-=fy*d2; uz-=fz*d2;
-        ul2=Math.sqrt(ux*ux+uy*uy+uz*uz)||1;
-      }
-      ux/=ul2; uy/=ul2; uz/=ul2;
-      // setTargetAtTime instead of raw .value: the browser ramps the
-      // listener basis itself, so an orientation sweep is continuous
-      // instead of a staircase of instantaneous steps.
+      var cl=C.ctx.listener, pc=C.listenerCur.p;
+      var b=orthoBasis(C.listenerCur.f,C.listenerCur.u);
+      var fx=b[0], fy=b[1], fz=b[2], ux=b[3], uy=b[4], uz=b[5];
       var tNow=C.ctx.currentTime, lt=0.04;
       if(cl.positionX){
         if(cl.positionX.setTargetAtTime){
@@ -196,11 +191,14 @@ function ntxPing(){ ntxReport({t:"pong"}); }
 // RMS_GATE still decides when to actually report, so ntxSetMeterInterval keeps
 // working and the timer is not rebuilt when the cadence changes.
 var BAND_KEYS=["midL","midR","subL","subR","subMono"];
+var rmsScratch=null;
 function analyserRms(an){
-  var b=new Uint8Array(an.fftSize), q=0;
+  var n=an.fftSize;
+  if(!rmsScratch||rmsScratch.length!==n) rmsScratch=new Uint8Array(n);
+  var b=rmsScratch, q=0;
   an.getByteTimeDomainData(b);
-  for(var z=0;z<b.length;z++){ var dv=b[z]-128; q+=dv*dv; }
-  return Math.sqrt(q/b.length)/128;
+  for(var z=0;z<n;z++){ var dv=b[z]-128; q+=dv*dv; }
+  return Math.sqrt(q/n)/128;
 }
 function reportBands(){
   try{
@@ -329,9 +327,7 @@ function buildChain(kind,side){
   var pol=C.ctx.createGain();
   var pn=C.ctx.createPanner();
   pn.panningModel="HRTF"; pn.distanceModel="inverse"; pn.refDistance=300; pn.rolloffFactor=1;
-  a1.connect(a2); a2.connect(occ); occ.connect(sh); sh.connect(g); g.connect(dl); dl.connect(pol); pol.connect(pn); pn.connect(C.master);
-  // Bisect taps: analysers pass signal through untouched while exposing
-  // per-stage energy, so a silent master can be blamed on filters vs pan.
+  a1.connect(a2); a2.connect(occ); occ.connect(sh); sh.connect(g); g.connect(dl); dl.connect(pol); pol.connect(pn);
   var anFQ=C.ctx.createAnalyser(); anFQ.fftSize=256; a2.connect(anFQ);
   var anPan=C.ctx.createAnalyser(); anPan.fftSize=256; pn.connect(anPan); anPan.connect(C.master);
   ch.a1=a1; ch.a2=a2; ch.g=g; ch.dl=dl; ch.pol=pol; ch.pn=pn; ch.kind=kind; ch.occ=occ; ch.sh=sh;
@@ -402,6 +398,8 @@ function dropChain(ch){
   try{ if(ch.srcNode){ ch.srcNode.disconnect(ch.a1); } }catch(e){}
   ch.srcNode=null; ch.wired=false;
   try{ ch.a1.disconnect(); }catch(e){}
+  try{ if(ch.anPan){ ch.anPan.disconnect(); } }catch(e){}
+  try{ if(ch.pn){ ch.pn.disconnect(); } }catch(e){}
 }
 // Gains ride setTargetAtTime so 10 Hz Lua pushes never zipper-click
 // (Glide engine_stream pattern: smooth param motion in-page).
@@ -693,22 +691,29 @@ function ntxSfx(s){
       }
     }
 
-    // The listener, so the fan is heard from where the player is.
     if(s&&s.listener){
       var L=s.listener;
-      var cl=C.ctx.listener, p=[L.px||0,L.py||0,L.pz||0], f=[L.fx||0,L.fy||0,L.fz||0], u=[L.ux||0,L.uy||0,L.uz||1];
+      var cl=C.ctx.listener;
+      var p=[L.px||0,L.py||0,L.pz||0];
+      var f=[L.fx||0,L.fy||0,L.fz||0];
+      var u=[
+        (typeof L.upx==="number"?L.upx:(L.ux||0)),
+        (typeof L.upy==="number"?L.upy:(L.uy||0)),
+        (typeof L.upz==="number"?L.upz:(typeof L.uz==="number"?L.uz:1))
+      ];
+      var b=orthoBasis(f,u);
       if(cl.positionX){
         cl.positionX.setTargetAtTime(p[0],t,0.05);
         cl.positionY.setTargetAtTime(p[1],t,0.05);
         cl.positionZ.setTargetAtTime(p[2],t,0.05);
-        cl.forwardX.setTargetAtTime(f[0],t,0.05);
-        cl.forwardY.setTargetAtTime(f[1],t,0.05);
-        cl.forwardZ.setTargetAtTime(f[2],t,0.05);
-        cl.upX.setTargetAtTime(u[0],t,0.05);
-        cl.upY.setTargetAtTime(u[1],t,0.05);
-        cl.upZ.setTargetAtTime(u[2],t,0.05);
+        cl.forwardX.setTargetAtTime(b[0],t,0.05);
+        cl.forwardY.setTargetAtTime(b[1],t,0.05);
+        cl.forwardZ.setTargetAtTime(b[2],t,0.05);
+        cl.upX.setTargetAtTime(b[3],t,0.05);
+        cl.upY.setTargetAtTime(b[4],t,0.05);
+        cl.upZ.setTargetAtTime(b[5],t,0.05);
       }else{
-        try{ cl.setPosition(p[0],p[1],p[2]); cl.setOrientation(f[0],f[1],f[2],u[0],u[1],u[2]); }catch(e){}
+        try{ cl.setPosition(p[0],p[1],p[2]); cl.setOrientation(b[0],b[1],b[2],b[3],b[4],b[5]); }catch(e){}
       }
     }
   }catch(e){}

@@ -184,15 +184,20 @@ net.Receive("NTx.AmpRms", function(_, ply)
     -- Only real inputs, only sane levels. Anything else is dropped, not
     -- stored, so a crafted packet cannot poison the model.
     if IsValid(ent) and ent:GetClass() == "ntx_input_url" then
-      for i = 1, 5 do b[i] = math.Clamp(tonumber(b[i]) or 0, 0, 1) end
-      NTx.LiveRms[ent] = {
-        b = b,
-        -- Mono of the two sides, kept so an older caller that does not know
-        -- about buses still gets a single usable level.
-        v = math.sqrt((b[1] * b[1] + b[2] * b[2]) * 0.5),
-        at = now,
-        by = ply,
-      }
+      local owner = ent.CPPIGetOwner and ent:CPPIGetOwner() or NULL
+      local canReport = true
+      if IsValid(owner) and owner ~= ply and owner.__ntxRmsReady then
+        canReport = ply:IsAdmin() or (NTx.CanEditRig and NTx.CanEditRig(ply, ent))
+      end
+      if canReport then
+        for i = 1, 5 do b[i] = math.Clamp(tonumber(b[i]) or 0, 0, 1) end
+        NTx.LiveRms[ent] = {
+          b = b,
+          v = math.sqrt((b[1] * b[1] + b[2] * b[2]) * 0.5),
+          at = now,
+          by = ply,
+        }
+      end
     end
   end
 end)
