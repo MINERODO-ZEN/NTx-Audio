@@ -340,6 +340,27 @@ local function wt(v)
   net.WriteUInt(math.Clamp(math.floor(((tonumber(v) or 0) + 40) * 10 + 0.5), 0, 65535), 16)
 end
 
+function NTx.SendToAmpRange(list, dist)
+  if #list == 0 or dist <= 0 then
+    net.Broadcast()
+    return
+  end
+  local distSqr = dist * dist
+  local recipients = {}
+  for _, ply in ipairs(player.GetAll()) do
+    if IsValid(ply) then
+      local ppos = ply:GetPos()
+      for _, e in ipairs(list) do
+        if ppos:DistToSqr(e.pos) <= distSqr then
+          recipients[#recipients + 1] = ply
+          break
+        end
+      end
+    end
+  end
+  net.Send(recipients)
+end
+
 function NTx.BroadcastAmpSync()
   if not NTx.AmpState then return end
   local now = CurTime()
@@ -347,12 +368,24 @@ function NTx.BroadcastAmpSync()
   if now - ampLastSync < 1 / math.Clamp(cv and cv:GetFloat() or 10, 1, 30) then return end
   ampLastSync = now
 
-  local list, center, n = {}, nil, 0
+  local list = {}
   for amp, st in pairs(NTx.AmpState) do
     if IsValid(amp) then
-      list[#list + 1] = { amp = amp, st = st }
-      center = center and center + amp:GetPos() or Vector(amp:GetPos())
-      n = n + 1
+      list[#list + 1] = { amp = amp, st = st, pos = amp:GetPos() }
+    end
+  end
+
+  local speakersByAmp = {}
+  if #list > 0 then
+    for _, spk in ipairs(ents.FindByClass("ntx_speaker")) do
+      if IsValid(spk) then
+        local a = spk:GetAmp()
+        if IsValid(a) then
+          local t = speakersByAmp[a]
+          if not t then t = {} speakersByAmp[a] = t end
+          t[#t + 1] = spk
+        end
+      end
     end
   end
 
@@ -390,11 +423,7 @@ function NTx.BroadcastAmpSync()
         + (c and c.overload and 16 or 0) + (c and c.dc and 32 or 0)
         + (c and c.shorted and 64 or 0)
       net.WriteUInt(flags, 8)
-      -- dBu at the amplifier input: the SIGNAL LED threshold (-40 dBu per
-      -- both manuals) is measured here, before the level control.
       wd(c and c.linDb or -120, 20)
-      -- Output relative to this channel's own ceiling, which is what moved
-      -- when the mains sagged or the foldback bit. The -20 / -10 LEDs read it.
       wd(c and (NTx.AmpDb(c.vout or 0) - NTx.AmpDb(c.vmax or 1)) or -120, 20)
       wu(c and c.i or 0, 100)
       wu(c and c.w or 0, 2)
@@ -402,10 +431,7 @@ function NTx.BroadcastAmpSync()
       wd(c and c.gainred or 0, 20)
     end
 
-    local spks = {}
-    for _, spk in ipairs(ents.FindByClass("ntx_speaker")) do
-      if IsValid(spk) and spk:GetAmp() == amp then spks[#spks + 1] = spk end
-    end
+    local spks = speakersByAmp[amp] or {}
     net.WriteUInt(#spks, 6)
     for _, spk in ipairs(spks) do
       local ss = NTx.SpkState[spk] or {}
@@ -421,13 +447,7 @@ function NTx.BroadcastAmpSync()
 
   local dist = GetConVar("ntx_amp_sync_dist")
   dist = math.Clamp(dist and dist:GetFloat() or 0, 0, 20000)
-  if #list == 0 or dist <= 0 then
-    net.Broadcast()
-  else
-    -- One message for the whole rig, culled by distance around its centroid, so
-    -- a venue with twenty amplifiers still costs exactly one send.
-    net.SendPVS(center / n, dist)
-  end
+  NTx.SendToAmpRange(list, dist)
 end
 
 -- ------------------------------------------------------------ amplifier edits
@@ -584,9 +604,8 @@ net.Receive("NTx.AmpEdit", function(_, ply)
         .. " (" .. keep .. " cabinet(s) still on a matching channel).")
     else
       local subs = 0
-      for bitv = mask, 1, 2 do
-        if bit.band(mask, bitv) ~= 0 then subs = subs + 1 end
-        if bitv > 128 then break end
+      for _, ch in ipairs(amp:ActiveChannels()) do
+        if amp:ChannelIsSub(ch) then subs = subs + 1 end
       end
       ply:ChatPrint("[NTx] Amplifier bus set (" .. subs .. " SUB channel(s)); no mixer patched.")
     end

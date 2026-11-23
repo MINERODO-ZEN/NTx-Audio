@@ -12,14 +12,42 @@ AddCSLuaFile()
 if not SERVER then return end
 
 local CLASSES = { "ntx_input_url", "ntx_mixer", "ntx_fallback_bus", "ntx_speaker" }
+local TRACKED = {}
+local CLASS_SET = {}
+for i = 1, #CLASSES do
+  CLASS_SET[CLASSES[i]] = true
+  TRACKED[CLASSES[i]] = {}
+  for _, e in ipairs(ents.FindByClass(CLASSES[i])) do
+    if IsValid(e) then TRACKED[CLASSES[i]][e] = true end
+  end
+end
+
+hook.Add("OnEntityCreated", "NTx.SignalTrackAdd", function(ent)
+  if not IsValid(ent) then return end
+  local cls = ent:GetClass()
+  if CLASS_SET[cls] then
+    TRACKED[cls][ent] = true
+  end
+end)
+
+hook.Add("EntityRemoved", "NTx.SignalTrackRemove", function(ent)
+  local cls = ent:GetClass()
+  if CLASS_SET[cls] then
+    TRACKED[cls][ent] = nil
+  end
+end)
 
 hook.Add("Think", "NTx.SignalTick", function()
   for i = 1, #CLASSES do
-    for _, e in ipairs(ents.FindByClass(CLASSES[i])) do
-      if IsValid(e) and e.UpdateSignal then
+    local cls = CLASSES[i]
+    local bucket = TRACKED[cls]
+    for e in pairs(bucket) do
+      if not IsValid(e) then
+        bucket[e] = nil
+      elseif e.UpdateSignal then
         local ok, err = pcall(e.UpdateSignal, e)
         if not ok then
-          print("[NTx] signal tick: " .. CLASSES[i] .. " errored: " .. tostring(err))
+          print("[NTx] signal tick: " .. cls .. " errored: " .. tostring(err))
         end
       end
     end

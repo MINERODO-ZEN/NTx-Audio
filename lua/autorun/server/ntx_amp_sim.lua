@@ -119,7 +119,7 @@ local function busLevel(mixer, bus)
           break
         end
       end
-      if muted then return 0 end
+      if muted then continue end
       -- The input volume is applied linearly by the audio path, not tapered.
       g = g * NTx.FaderToGain(chFader) * (tonumber(inp:GetInputVolume()) or 1)
       -- A source with no URL is not playing at all, so it contributes nothing.
@@ -176,7 +176,7 @@ local function approach(cur, target, dt, tau)
 end
 
 -- One amplifier, one tick.
-local function stepAmp(amp, now, dt)
+local function stepAmp(amp, now, dt, speakers)
   local p = amp:Prof()
   if not p then return end
   local st = NTx.AmpState[amp]
@@ -244,7 +244,7 @@ local function stepAmp(amp, now, dt)
     end
   end
 
-  local speakers = speakersOn(amp)
+  speakers = speakers or speakersOn(amp)
   local totalOut, totalDiss, peakDev, worstClip = 0, 0, -999, 1
   local anyProtect, anyClip, railAny = false, false, 0
 
@@ -381,7 +381,7 @@ local function stepAmp(amp, now, dt)
     local tdev = st.tsink + th.kdev * watts
     c.tdev = tdev
     peakDev = math.max(peakDev, tdev)
-    if clipLit then worstClip = math.min(worstClip, clip) end
+    if clipLit then worstClip = math.max(worstClip, clip) end
     anyClip = anyClip or clipLit
     anyProtect = anyProtect or protect
 
@@ -455,8 +455,8 @@ local function stepAmp(amp, now, dt)
   dmg = dmg + math.max(0, (peakDev - th.tdestroy) / 40) * 0.01
   -- Sustained clipping at or above rated power is what cooks an output stage,
   -- and it has to persist: the foldback usually steps in first.
-  if worstClip < 1 then
-    dmg = dmg + math.max(0, worstClip - 1.02) ^ 1.5 * math.Clamp(totalOut / ratedTot, 0, 3) * 0.01
+  if worstClip > 1.02 then
+    dmg = dmg + (worstClip - 1.02) ^ 1.5 * math.Clamp(totalOut / ratedTot, 0, 3) * 0.01
   end
   for _, ch in ipairs(amp:ActiveChannels()) do
     local c = st[ch]
@@ -730,12 +730,28 @@ hook.Add("Think", "NTx.AmpSim", function()
   end
   NTx.AmpSimRate = stepRate
 
+  local amps = ents.FindByClass("ntx_amplifier")
+  local simOn = NTx.AmpSimEnabled()
+  local speakersByAmp = {}
+  if simOn and #amps > 0 then
+    for _, spk in ipairs(ents.FindByClass("ntx_speaker")) do
+      if IsValid(spk) and not spk:GetActive() then
+        local a = spk:GetAmp()
+        if IsValid(a) then
+          local t = speakersByAmp[a]
+          if not t then t = {} speakersByAmp[a] = t end
+          t[#t + 1] = spk
+        end
+      end
+    end
+  end
+
   local live = {}
-  for _, amp in ipairs(ents.FindByClass("ntx_amplifier")) do
+  for _, amp in ipairs(amps) do
     if IsValid(amp) then
       live[amp] = true
-      if NTx.AmpSimEnabled() then
-        stepAmp(amp, now, dt)
+      if simOn then
+        stepAmp(amp, now, dt, speakersByAmp[amp] or {})
         local st = NTx.AmpState[amp]
         if st then
           for _, ch in ipairs(amp:ActiveChannels()) do

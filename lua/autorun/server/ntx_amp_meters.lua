@@ -46,12 +46,10 @@ function NTx.BroadcastAmpMeters()
 
   NTx.AmpMeterSends = (NTx.AmpMeterSends or 0) + 1
   NTx.AmpMeterRate = NTx.AmpMeterSends
-  local list, center, n = {}, nil, 0
+  local list = {}
   for amp, st in pairs(NTx.AmpState) do
     if IsValid(amp) then
-      list[#list + 1] = { amp = amp, st = st }
-      center = center and center + amp:GetPos() or Vector(amp:GetPos())
-      n = n + 1
+      list[#list + 1] = { amp = amp, st = st, pos = amp:GetPos() }
     end
   end
   if #list == 0 then return end
@@ -70,13 +68,11 @@ function NTx.BroadcastAmpMeters()
     end
   end
 
-  -- Same distance cull as AmpSync: one message for the whole rig, sent around
-  -- its centroid, so a venue with twenty amplifiers still costs one send.
   local cv = GetConVar("ntx_amp_sync_dist")
   local dist = math.Clamp(cv and cv:GetFloat() or 0, 0, 20000)
-  if dist <= 0 then
-    net.Broadcast()
+  if NTx.SendToAmpRange then
+    NTx.SendToAmpRange(list, dist)
   else
-    net.SendPVS(center / n, dist)
+    net.Broadcast()
   end
 end

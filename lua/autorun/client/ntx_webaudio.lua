@@ -581,22 +581,6 @@ function NTx.WebAudioOnStatus(pkey, json)
       NTx.BrokenRetryAt[P.inputEnt] = nil
     end
   elseif r.t == "rms" then
-    -- Optional (page v6): the source level measured in the page, which is what
-    -- makes the amplifier meters move with the music instead of sitting on the
-    -- mixer faders. A page that never reports it just leaves the meters on the
-    -- server's commanded estimate.
-    -- How often the page's measurements arrive, measured.
-    local now = CurTime()
-    NTx.PageRmsCount = (NTx.PageRmsCount or 0) + 1
-    if not NTx.PageRmsAt or (now - NTx.PageRmsAt) >= 1 then
-      NTx.PageRmsRate = (NTx.PageRmsCount - (NTx.PageRmsBase or 0)) / math.max(now - (NTx.PageRmsAt or (now - 1)), 0.001)
-      NTx.PageRmsAt = now
-      NTx.PageRmsBase = NTx.PageRmsCount
-    end
-    -- How often the page's measurements arrive, and how many the page says
-    -- it has taken. Two different numbers: the first is what reached us, the
-    -- second is what the page did, and a gap between them means the bridge or
-    -- the gate is the problem.
     local now = CurTime()
     NTx.PageRmsCount = (NTx.PageRmsCount or 0) + 1
     if not NTx.PageRmsAt or (now - NTx.PageRmsAt) >= 1 then
@@ -643,6 +627,9 @@ end
 function NTx.WebAudioResume()
   for _, P in pairs(NTx.WebAudio.Pages) do
     if IsValid(P.panel) then P.panel:Call("ntxResume()") end
+  end
+  if NTx.AmpSfx and IsValid(NTx.AmpSfx.panel) then
+    NTx.AmpSfx.panel:Call("ntxResume()")
   end
 end
 
